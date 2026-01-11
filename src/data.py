@@ -29,21 +29,34 @@ def load_price_data(
     if proxy:
         yf.set_config(proxy=proxy)
 
-    raw = yf.download(
+    data = yf.download(
         tickers,
         start=start_date,
         end=end_date,
         auto_adjust=True,
         progress=False,
-    )['Close']
+    )
+
+    # Handle different yfinance column formats
+    if isinstance(data.columns, pd.MultiIndex):
+        raw = data['Close']
+    else:
+        raw = data['Close'] if 'Close' in data.columns else data
 
     # Handle single ticker case
     if isinstance(raw, pd.Series):
         raw = raw.to_frame(name=tickers[0])
 
-    # Reorder columns to match input ticker order
-    available_tickers = [t for t in tickers if t in raw.columns]
-    missing_tickers = [t for t in tickers if t not in raw.columns]
+    # Check which tickers have actual data (not all NaN)
+    available_tickers = []
+    missing_tickers = []
+
+    for t in tickers:
+        if t in raw.columns and raw[t].notna().any():
+            available_tickers.append(t)
+        else:
+            missing_tickers.append(t)
+
     dataset = raw[available_tickers].resample('B').last().ffill()
 
     return dataset, missing_tickers
