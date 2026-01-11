@@ -172,7 +172,7 @@ if st.sidebar.button("🔄 Run Analysis", type="primary"):
     else:
         with st.spinner("Loading price data..."):
             try:
-                dataset = load_price_data(
+                dataset, missing_tickers = load_price_data(
                     selected_tickers,
                     start_date=str(start_date),
                     proxy=proxy_url if use_proxy and proxy_url else None,
@@ -192,6 +192,8 @@ if st.sidebar.button("🔄 Run Analysis", type="primary"):
                     'strategy_type': strategy_type,
                 }
                 st.success(f"Loaded {len(dataset)} days of data for {len(dataset.columns)} tickers")
+                if missing_tickers:
+                    st.warning(f"Data not found for: {', '.join(missing_tickers)}")
             except Exception as e:
                 st.error(f"Error loading data: {e}")
 

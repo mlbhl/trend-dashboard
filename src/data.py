@@ -12,7 +12,7 @@ def load_price_data(
     start_date: str = '2000-01-01',
     end_date: str | None = None,
     proxy: str | None = None,
-) -> pd.DataFrame:
+) -> tuple[pd.DataFrame, list[str]]:
     """
     Load price data from Yahoo Finance.
 
@@ -23,7 +23,7 @@ def load_price_data(
         proxy: Proxy URL (e.g., 'http://proxy.example.com:8080')
 
     Returns:
-        DataFrame with adjusted close prices, resampled to business days
+        Tuple of (DataFrame with adjusted close prices, list of missing tickers)
     """
     # Set proxy if provided
     if proxy:
@@ -43,9 +43,10 @@ def load_price_data(
 
     # Reorder columns to match input ticker order
     available_tickers = [t for t in tickers if t in raw.columns]
+    missing_tickers = [t for t in tickers if t not in raw.columns]
     dataset = raw[available_tickers].resample('B').last().ffill()
 
-    return dataset
+    return dataset, missing_tickers
 
 
 def get_latest_prices(dataset: pd.DataFrame) -> pd.Series:
