@@ -176,7 +176,7 @@ def create_holding_heatmap(
     weight_t = w.T
     x_dates = pd.to_datetime(weight_t.columns)
 
-    step = 3
+    step = 1
     tick_idx = list(range(0, len(x_dates), step))
     tickvals = x_dates[tick_idx]
     ticktext = [d.strftime("%y.%m") for d in tickvals]
