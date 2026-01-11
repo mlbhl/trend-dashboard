@@ -86,15 +86,6 @@ if new_ticker:
         st.sidebar.success(f"Added: {new_ticker}")
         st.rerun()
 
-# Show and allow removal of custom tickers
-if st.session_state['custom_tickers']:
-    st.sidebar.caption("Custom tickers (click to remove):")
-    cols = st.sidebar.columns(4)
-    for i, ticker in enumerate(st.session_state['custom_tickers']):
-        if cols[i % 4].button(f"❌ {ticker}", key=f"remove_{ticker}"):
-            st.session_state['custom_tickers'].remove(ticker)
-            st.rerun()
-
 selected_tickers = st.sidebar.multiselect(
     "Select Tickers",
     options=available_tickers,
