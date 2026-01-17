@@ -319,13 +319,13 @@ if 'dataset' in st.session_state:
 
         wgt = q_wgts[selected_quantile]
 
-    # Limit to recent data (60 months = 5 years)
-    recent_wgt = wgt.iloc[-60:]
+    # Limit to recent data (36 months = 3 years)
+    recent_wgt = wgt.iloc[-36:]
     n_tickers = len(recent_wgt.columns)
     chart_height = max(500, n_tickers * 25)  # Ensure all tickers visible
     fig_heatmap = create_holding_heatmap(
         recent_wgt,
-        title=f"Monthly Holdings - {selected_quantile} (Last 60 Months)",
+        title=f"Monthly Holdings - {selected_quantile} (Last 36 Months)",
         height=chart_height,
     )
     st.plotly_chart(fig_heatmap, use_container_width=True)

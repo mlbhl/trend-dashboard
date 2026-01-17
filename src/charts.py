@@ -189,6 +189,7 @@ def create_holding_heatmap(
         xgap=0.1,
         ygap=0.1,
         hovertemplate='Ticker: %{y}<br>Date: %{x}<br>Weight: %{z:.2%}<extra></extra>',
+        showscale=False,
     ))
 
     fig.update_layout(
