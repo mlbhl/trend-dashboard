@@ -116,7 +116,7 @@ st.sidebar.subheader("Weight Parameters")
 weight_mode = st.sidebar.radio(
     "Weight Calculation",
     ["Equal (1/3 each)", "Custom"],
-    index=0
+    index=1
 )
 
 if weight_mode == "Custom":
