@@ -76,26 +76,43 @@ if 'custom_tickers' not in st.session_state:
 # Combine default and custom tickers
 available_tickers = ALPHA_LIST.copy() + st.session_state['custom_tickers']
 
-# Add new ticker input
-new_ticker = st.sidebar.text_input(
-    "Add New Ticker",
-    placeholder="e.g., SPY, QQQ",
-    help="Enter ticker symbol and press Enter to add"
-)
-if new_ticker:
-    new_ticker = new_ticker.strip().upper()
-    if new_ticker and new_ticker not in available_tickers:
-        st.session_state['custom_tickers'].append(new_ticker)
-        available_tickers.append(new_ticker)
-        st.sidebar.success(f"Added: {new_ticker}")
-        st.rerun()
+# Initialize selected tickers (only on first load)
+if 'ticker_select' not in st.session_state:
+    st.session_state['ticker_select'] = available_tickers.copy()
 
+# Callbacks (executed before widgets render)
+def reset_tickers():
+    st.session_state['ticker_select'] = ALPHA_LIST.copy()
+    st.session_state['custom_tickers'] = []
+    st.session_state['new_ticker_input'] = ""
+
+def add_new_ticker():
+    new_val = st.session_state.get('new_ticker_input', '').strip().upper()
+    if new_val and new_val not in available_tickers:
+        st.session_state['custom_tickers'].append(new_val)
+        current = list(st.session_state.get('ticker_select', []))
+        current.append(new_val)
+        st.session_state['ticker_select'] = current
+    st.session_state['new_ticker_input'] = ""
+
+# Widgets
 selected_tickers = st.sidebar.multiselect(
     "Select Tickers",
     options=available_tickers,
-    default=available_tickers,
+    key="ticker_select",
     help="Select ETFs to include in the analysis"
 )
+
+st.sidebar.text_input(
+    "Add New Ticker",
+    placeholder="e.g., SPY, QQQ",
+    help="Enter ticker symbol and press Enter to add",
+    key="new_ticker_input",
+    on_change=add_new_ticker
+)
+
+st.sidebar.button("Reset to Default Tickers", on_click=reset_tickers)
+
 thresh = st.sidebar.slider(
     "Min Valid Tickers",
     min_value=1, max_value=20, value=DEFAULT_THRESH,
