@@ -286,7 +286,7 @@ if 'dataset' in st.session_state:
 
     # Signal Category Table (Q5~Q1 with all tickers)
     latest_signal = get_signal_ranking(signal)
-    st.subheader(f"Current Signal by Quantile ({signal.index[-1].strftime('%Y-%m-%d')})")
+    st.subheader(f"Current Signal by Quantile ({dataset.index[-1].strftime('%Y-%m-%d')})")
     st.caption("Rank 1 = Best (Q5), Higher Rank = Worse (Q1). Format: Ticker (Rank)")
     fig_category = create_signal_category_table(
         latest_signal,
