@@ -38,7 +38,7 @@ def generate_signal(
     mom_l = (price_m / price_m.shift(long_window)).rank(axis=1)
 
     # Weighted combination and re-rank (ascending=False means rank 1 = highest score)
-    sig = (mom_s * short_wgt + mom_m * mid_wgt + mom_l * long_wgt).rank(axis=1, ascending=False)
+    sig = (mom_s * short_wgt + mom_m * mid_wgt + mom_l * long_wgt).rank(axis=1, method="first", ascending=False)
     sig = sig.dropna(thresh=thresh)
 
     return sig
