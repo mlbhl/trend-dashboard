@@ -345,6 +345,7 @@ if 'dataset' in st.session_state:
         wgt = q_wgts[selected_quantile]
 
     # Limit to recent data (36 months = 3 years)
+    wgt.index = wgt.index + BMonthBegin(1)
     recent_wgt = wgt.iloc[-36:]
     n_tickers = len(recent_wgt.columns)
     chart_height = max(500, n_tickers * 25)  # Ensure all tickers visible
