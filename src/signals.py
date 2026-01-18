@@ -12,6 +12,7 @@ def generate_signal(
     short_wgt: float = 1/3,
     mid_wgt: float = 1/3,
     long_wgt: float = 1/3,
+    thresh: int = 10,
 ) -> pd.DataFrame:
     """
     Generate momentum-based ranking signal.
@@ -24,6 +25,7 @@ def generate_signal(
         short_wgt: Weight for short-term momentum
         mid_wgt: Weight for mid-term momentum
         long_wgt: Weight for long-term momentum
+        thresh: Minimum number of non-NA values required to keep a row
 
     Returns:
         DataFrame with cross-sectional rankings (1 = best)
@@ -37,7 +39,7 @@ def generate_signal(
 
     # Weighted combination and re-rank (ascending=False means rank 1 = highest score)
     sig = (mom_s * short_wgt + mom_m * mid_wgt + mom_l * long_wgt).rank(axis=1, ascending=False)
-    sig = sig.dropna(thresh=10)
+    sig = sig.dropna(thresh=thresh)
 
     return sig
 

@@ -16,6 +16,7 @@ from src.config import (
     DEFAULT_LONG_WEIGHT,
     DEFAULT_TOP_K,
     DEFAULT_TCOST,
+    DEFAULT_THRESH,
 )
 from src.data import load_price_data
 from src.signals import generate_signal, get_signal_ranking
@@ -51,7 +52,7 @@ st.sidebar.header("Parameters")
 # Data settings
 st.sidebar.subheader("Data Settings")
 start_date = st.sidebar.date_input(
-    "Start Date",
+    "Download Start Date",
     value=pd.to_datetime(DEFAULT_START_DATE),
     min_value=pd.to_datetime("2000-01-01"),
 )
@@ -94,6 +95,11 @@ selected_tickers = st.sidebar.multiselect(
     options=available_tickers,
     default=available_tickers,
     help="Select ETFs to include in the analysis"
+)
+thresh = st.sidebar.slider(
+    "Min Valid Tickers",
+    min_value=1, max_value=20, value=DEFAULT_THRESH,
+    help="Minimum number of valid tickers required to run the analysis"
 )
 
 # Signal parameters
@@ -173,6 +179,7 @@ if st.sidebar.button("🔄 Run Analysis", type="primary"):
                 )
                 st.session_state['dataset'] = dataset
                 st.session_state['params'] = {
+                    'thresh': thresh,
                     'short_window': short_window,
                     'mid_window': mid_window,
                     'long_window': long_window,
@@ -206,6 +213,7 @@ if 'dataset' in st.session_state:
             short_wgt=params['short_wgt'],
             mid_wgt=params['mid_wgt'],
             long_wgt=params['long_wgt'],
+            thresh=params['thresh'],
         )
 
     # Run backtest based on strategy type
