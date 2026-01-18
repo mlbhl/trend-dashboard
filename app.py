@@ -42,7 +42,7 @@ st.set_page_config(
     layout="wide",
 )
 
-st.title("📈 Momentum Strategy Dashboard")
+st.title("Momentum Strategy Dashboard")
 
 # =============================================================================
 # Sidebar - Parameters
@@ -184,8 +184,8 @@ tcost = st.sidebar.number_input(
 
 # Load data button
 if st.sidebar.button("🔄 Run Analysis", type="primary"):
-    if len(selected_tickers) < 5:
-        st.error("Please select at least 5 tickers for analysis.")
+    if len(selected_tickers) < 2:
+        st.error("Please select at least 2 tickers for analysis.")
     else:
         with st.spinner("Loading price data..."):
             try:
@@ -286,7 +286,7 @@ if 'dataset' in st.session_state:
 
     # Signal Category Table (Q5~Q1 with all tickers)
     latest_signal = get_signal_ranking(signal)
-    st.subheader(f"📊 Current Signal by Quantile ({signal.index[-1].strftime('%Y-%m-%d')})")
+    st.subheader(f"Current Signal by Quantile ({signal.index[-1].strftime('%Y-%m-%d')})")
     st.caption("Rank 1 = Best (Q5), Higher Rank = Worse (Q1). Format: Ticker (Rank)")
     fig_category = create_signal_category_table(
         latest_signal,

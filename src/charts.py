@@ -203,7 +203,7 @@ def create_holding_heatmap(
             tickvals=tickvals,
             ticktext=ticktext,
             tickangle=45,
-            tickfont=dict(size=10),
+            tickfont=dict(size=12),
         ),
         yaxis=dict(
             tickmode='linear',
@@ -288,9 +288,9 @@ def create_signal_category_table(
         cells=dict(
             values=cell_values,
             fill_color='white',
-            font=dict(color='black', size=12),
+            font=dict(color='black', size=14),
             align='center',
-            height=28,
+            height=30,
         ),
     )])
 
@@ -331,7 +331,7 @@ def create_quantile_spread_chart(
         y=spread,
         mode='lines',
         name='Q5 - Q1 Spread',
-        line=dict(color='darkblue', width=2),
+        line=dict(color='lightblue', width=2),
         fill='tozeroy',
     ))
 
@@ -380,16 +380,16 @@ def create_returns_table(stats: pd.DataFrame) -> go.Figure:
         header=dict(
             values=['Metric'] + list(formatted.columns),
             fill_color='darkblue',
-            font=dict(color='white', size=12),
+            font=dict(color='white', size=14),
             align='left',
-            height=30,
+            height=35,
         ),
         cells=dict(
             values=[formatted.index] + [formatted[col] for col in formatted.columns],
             fill_color='lavender',
-            font=dict(color='black', size=12),
+            font=dict(color='black', size=14),
             align='left',
-            height=25,
+            height=30,
         ),
     )])
 
