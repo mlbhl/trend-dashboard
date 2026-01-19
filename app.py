@@ -58,13 +58,13 @@ start_date = st.sidebar.date_input(
 )
 
 # Proxy setting (optional)
-use_proxy = st.sidebar.checkbox("Use Proxy", value=False)
-proxy_url = None
-if use_proxy:
-    proxy_url = st.sidebar.text_input(
-        "Proxy URL",
-        placeholder="http://proxy.example.com:8080"
-    )
+# use_proxy = st.sidebar.checkbox("Use Proxy", value=False)
+# proxy_url = None
+# if use_proxy:
+#     proxy_url = st.sidebar.text_input(
+#         "Proxy URL",
+#         placeholder="http://proxy.example.com:8080"
+#     )
 
 # Ticker selection
 st.sidebar.subheader("Ticker Selection")
