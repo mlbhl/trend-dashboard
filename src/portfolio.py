@@ -10,8 +10,8 @@ from .signals import calc_vol
 def compute_weight_top_k(
     price: pd.DataFrame,
     signal: pd.DataFrame,
-    top_k: int = 5,
-    inverse_vol: bool = False,
+    top_k: int | None = 5,
+    weight_method: str = "equal",
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """
     Compute portfolio weights selecting top-k ranked assets.
@@ -19,8 +19,8 @@ def compute_weight_top_k(
     Args:
         price: Daily price DataFrame
         signal: Signal DataFrame with rankings (1 = best)
-        top_k: Number of top-ranked assets to select
-        inverse_vol: If True, weight by inverse volatility
+        top_k: Number of top-ranked assets to select (None for all)
+        weight_method: Weighting method - "equal", "inverse_vol", or "rank"
 
     Returns:
         Tuple of (portfolio weights, benchmark weights)
@@ -37,15 +37,26 @@ def compute_weight_top_k(
         if len(valid) > 0:
             bm_wgt.loc[date, valid] = 1.0 / len(valid)
 
-        selected = row[row <= top_k].index
+        # Select top-k or all valid tickers
+        if top_k is None:
+            selected = valid
+        else:
+            selected = row[row <= top_k].index
+
         if len(selected) == 0:
             continue
 
-        if inverse_vol:
+        if weight_method == "inverse_vol":
             inv_vol = 1 / vol.loc[date, selected]
             inv_vol = inv_vol.replace([np.inf, -np.inf], np.nan).dropna()
             w = inv_vol / inv_vol.sum()
-        else:
+        elif weight_method == "rank":
+            # Weight by rank (best ticker gets highest rank)
+            # Convert: rank 1 (best) -> len(selected), rank len(selected) (worst) -> 1
+            ranks = row.loc[selected]
+            converted_rank = len(selected) + 1 - ranks
+            w = converted_rank / converted_rank.sum()
+        else:  # equal
             w = pd.Series(1.0 / len(selected), index=selected)
 
         wgt.loc[date, selected] = w
@@ -57,7 +68,7 @@ def compute_weight_quantile(
     price: pd.DataFrame,
     signal: pd.DataFrame,
     n_quantiles: int = 5,
-    inverse_vol: bool = False,
+    weight_method: str = "equal",
 ) -> tuple[dict[str, pd.DataFrame], pd.DataFrame]:
     """
     Compute portfolio weights for each quantile.
@@ -66,7 +77,7 @@ def compute_weight_quantile(
         price: Daily price DataFrame
         signal: Signal DataFrame with rankings
         n_quantiles: Number of quantile groups
-        inverse_vol: If True, weight by inverse volatility
+        weight_method: Weighting method - "equal", "inverse_vol", or "rank"
 
     Returns:
         Tuple of (dict of quantile weights, benchmark weights)
@@ -103,11 +114,16 @@ def compute_weight_quantile(
             if len(selected) == 0:
                 continue
 
-            if inverse_vol:
+            if weight_method == "inverse_vol":
                 inv_vol = 1.0 / vol.loc[date, selected]
                 inv_vol = inv_vol.replace([np.inf, -np.inf], np.nan).dropna()
                 w = inv_vol / inv_vol.sum()
-            else:
+            elif weight_method == "rank":
+                # Weight by rank within quantile (best ticker gets highest rank)
+                ranks = row.loc[selected]
+                converted_rank = len(selected) + 1 - ranks.rank(method="first")
+                w = converted_rank / converted_rank.sum()
+            else:  # equal
                 w = pd.Series(1.0 / len(selected), index=selected)
 
             q_wgts[str(q)].loc[date, selected] = w
@@ -192,6 +208,7 @@ def run_quantile_backtest(
     n_quantiles: int = 5,
     capital: float = 1000,
     tcost: float = 0.0,
+    weight_method: str = "equal",
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.Series]:
     """
     Run backtest for all quantiles and benchmark.
@@ -199,7 +216,7 @@ def run_quantile_backtest(
     Returns:
         Tuple of (NAV DataFrame, turnover DataFrame, benchmark NAV)
     """
-    q_wgts, bm_wgt = compute_weight_quantile(price, signal, n_quantiles)
+    q_wgts, bm_wgt = compute_weight_quantile(price, signal, n_quantiles, weight_method)
 
     # Shift weights to next month beginning
     bm_wgt.index = bm_wgt.index + BMonthBegin(1)
@@ -224,18 +241,24 @@ def run_quantile_backtest(
 def run_top_k_backtest(
     price: pd.DataFrame,
     signal: pd.DataFrame,
-    top_k: int = 5,
-    inverse_vol: bool = False,
+    top_k: int | None = 5,
+    weight_method: str = "equal",
     capital: float = 1000,
     tcost: float = 0.0,
 ) -> tuple[pd.Series, pd.Series, pd.Series]:
     """
     Run backtest for top-k strategy and benchmark.
 
+    Args:
+        price: Daily price DataFrame
+        signal: Signal DataFrame with rankings
+        top_k: Number of top-ranked assets (None for all)
+        weight_method: Weighting method - "equal", "inverse_vol", or "rank"
+
     Returns:
         Tuple of (strategy NAV, benchmark NAV, turnover)
     """
-    top_wgt, bm_wgt = compute_weight_top_k(price, signal, top_k, inverse_vol)
+    top_wgt, bm_wgt = compute_weight_top_k(price, signal, top_k, weight_method)
 
     # Shift weights to next month beginning
     bm_wgt.index = bm_wgt.index + BMonthBegin(1)

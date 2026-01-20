@@ -8,6 +8,7 @@ from src.config import (
     ALPHA_LIST,
     TICKER_DESCRIPTIONS,
     DEFAULT_START_DATE,
+    DEFAULT_BACKTEST_START_DATE,
     DEFAULT_SHORT_WINDOW,
     DEFAULT_MID_WINDOW,
     DEFAULT_LONG_WINDOW,
@@ -17,6 +18,7 @@ from src.config import (
     DEFAULT_TOP_K,
     DEFAULT_TCOST,
     DEFAULT_THRESH,
+    WEIGHT_METHODS,
 )
 from src.data import load_price_data
 from src.signals import generate_signal, get_signal_ranking
@@ -54,7 +56,16 @@ st.sidebar.subheader("Data Settings")
 start_date = st.sidebar.date_input(
     "Download Start Date",
     value=pd.to_datetime(DEFAULT_START_DATE),
-    min_value=pd.to_datetime("2000-01-01"),
+    min_value=pd.to_datetime("1990-01-01"),
+    max_value=pd.to_datetime("today"),
+    help="Data download period start"
+)
+backtest_start_date = st.sidebar.date_input(
+    "Backtest Start Date",
+    value=pd.to_datetime(DEFAULT_BACKTEST_START_DATE),
+    min_value=pd.to_datetime("1990-01-01"),
+    max_value=pd.to_datetime("today"),
+    help="If data is insufficient, the earliest available date will be used."
 )
 
 # Proxy setting (optional)
@@ -161,22 +172,71 @@ strategy_type = st.sidebar.selectbox(
     index=0
 )
 
-top_k = st.sidebar.slider(
-    "Top K (for Top-K strategy)",
-    min_value=1, max_value=10, value=DEFAULT_TOP_K
+# Top-K options with select all
+select_all_tickers = st.sidebar.checkbox(
+    "Select All Tickers",
+    value=False,
+    help="Select all available tickers at each rebalancing (dynamic K)"
 )
+
+if select_all_tickers:
+    top_k = None  # None means select all
+    st.sidebar.info("All available tickers will be selected each period")
+else:
+    top_k = st.sidebar.slider(
+        "Top K (for Top-K strategy)",
+        min_value=1, max_value=10, value=DEFAULT_TOP_K
+    )
 
 n_quantiles = st.sidebar.slider(
     "Number of Quantiles",
     min_value=3, max_value=10, value=5
 )
 
-inverse_vol = st.sidebar.checkbox("Inverse Volatility Weighting", value=False)
+# Weight method selector
+weight_method_label = st.sidebar.selectbox(
+    "Weighting Method",
+    options=list(WEIGHT_METHODS.keys()),
+    index=0,
+    help="Equal: 1/N weight | Inverse Vol: weight by 1/volatility | Rank: weight by 1/rank"
+)
+weight_method = WEIGHT_METHODS[weight_method_label]
 
 tcost = st.sidebar.number_input(
     "Transaction Cost (one-way)",
     min_value=0.0, max_value=0.01, value=0.0, step=0.0005, format="%.4f"
 )
+
+# Benchmark settings
+st.sidebar.subheader("Benchmark Settings")
+bm_type = st.sidebar.radio(
+    "Benchmark Type",
+    ["Equal Weight", "Custom Ticker"],
+    index=0,
+    help="EW uses equal weight of all selected tickers"
+)
+
+# Initialize benchmark ticker in session state
+if 'bm_ticker' not in st.session_state:
+    st.session_state['bm_ticker'] = "SPY"
+
+def apply_bm_ticker():
+    new_val = st.session_state.get('bm_ticker_input', '').strip().upper()
+    if new_val:
+        st.session_state['bm_ticker'] = new_val
+
+custom_bm_ticker = None
+if bm_type == "Custom Ticker":
+    st.sidebar.text_input(
+        "Benchmark Ticker",
+        value=st.session_state['bm_ticker'],
+        placeholder="e.g., SPY, QQQ",
+        help="Enter ticker symbol and press Enter to apply",
+        key="bm_ticker_input",
+        on_change=apply_bm_ticker
+    )
+    custom_bm_ticker = st.session_state['bm_ticker']
+    st.sidebar.success(f"✓ Benchmark: **{custom_bm_ticker}**")
 
 # =============================================================================
 # Main Content
@@ -189,12 +249,27 @@ if st.sidebar.button("🔄 Run Analysis", type="primary"):
     else:
         with st.spinner("Loading price data..."):
             try:
+                # Load main dataset
                 dataset, missing_tickers = load_price_data(
                     selected_tickers,
                     start_date=str(start_date),
-                    proxy=proxy_url if use_proxy and proxy_url else None,
                 )
+
+                # Load custom benchmark ticker if specified
+                bm_data = None
+                bm_missing = False
+                if custom_bm_ticker and custom_bm_ticker not in dataset.columns:
+                    bm_dataset, bm_missing_list = load_price_data(
+                        [custom_bm_ticker],
+                        start_date=str(start_date),
+                    )
+                    if custom_bm_ticker in bm_dataset.columns:
+                        bm_data = bm_dataset[custom_bm_ticker]
+                    else:
+                        bm_missing = True
+
                 st.session_state['dataset'] = dataset
+                st.session_state['bm_data'] = bm_data
                 st.session_state['params'] = {
                     'thresh': thresh,
                     'short_window': short_window,
@@ -205,13 +280,17 @@ if st.sidebar.button("🔄 Run Analysis", type="primary"):
                     'long_wgt': long_wgt,
                     'top_k': top_k,
                     'n_quantiles': n_quantiles,
-                    'inverse_vol': inverse_vol,
+                    'weight_method': weight_method,
                     'tcost': tcost,
                     'strategy_type': strategy_type,
+                    'backtest_start_date': str(backtest_start_date),
+                    'custom_bm_ticker': custom_bm_ticker if bm_type == "Custom Ticker" else None,
                 }
                 st.success(f"Loaded {len(dataset)} days of data for {len(dataset.columns)} tickers")
                 if missing_tickers:
                     st.warning(f"Data not found for: {', '.join(missing_tickers)}")
+                if bm_missing:
+                    st.warning(f"Benchmark ticker '{custom_bm_ticker}' not found. Using Equal Weight BM instead.")
             except Exception as e:
                 st.error(f"Error loading data: {e}")
 
@@ -219,6 +298,7 @@ if st.sidebar.button("🔄 Run Analysis", type="primary"):
 if 'dataset' in st.session_state:
     dataset = st.session_state['dataset']
     params = st.session_state['params']
+    bm_data = st.session_state.get('bm_data')
 
     # Generate signal
     with st.spinner("Generating signals..."):
@@ -236,30 +316,61 @@ if 'dataset' in st.session_state:
     # Run backtest based on strategy type
     with st.spinner("Running backtest..."):
         if params['strategy_type'] == "Top-K":
-            strat_nav, bm_nav, turnover = run_top_k_backtest(
+            strat_nav, universe_bm_nav, turnover = run_top_k_backtest(
                 dataset, signal,
                 top_k=params['top_k'],
-                inverse_vol=params['inverse_vol'],
+                weight_method=params['weight_method'],
                 tcost=params['tcost'],
             )
-            navs = pd.DataFrame({
-                f"Top-{params['top_k']}": strat_nav,
-                'BM': bm_nav
-            })
+            # Strategy name
+            strat_name = "All" if params['top_k'] is None else f"Top-{params['top_k']}"
+            navs = pd.DataFrame({strat_name: strat_nav})
         else:
-            q_nav, q_to, bm_nav = run_quantile_backtest(
+            q_nav, q_to, universe_bm_nav = run_quantile_backtest(
                 dataset, signal,
                 n_quantiles=params['n_quantiles'],
                 tcost=params['tcost'],
+                weight_method=params['weight_method'],
             )
-            navs = pd.concat([q_nav, bm_nav], axis=1)
+            navs = q_nav.copy()
+
+        # Handle benchmark
+        if params.get('custom_bm_ticker') and bm_data is not None:
+            # Use custom ticker as benchmark
+            bm_ticker = params['custom_bm_ticker']
+            # Align benchmark data with strategy NAV dates
+            bm_aligned = bm_data.reindex(navs.index).ffill().bfill()
+            # Convert price to NAV (starting at same value as strategy)
+            bm_nav = bm_aligned / bm_aligned.iloc[0] * 1000
+            bm_nav.name = bm_ticker
+            navs['BM'] = bm_nav
+        else:
+            # Use universe equal weight as benchmark
+            navs['BM'] = universe_bm_nav
+
+    # Apply backtest start date for display
+    backtest_start = pd.to_datetime(params['backtest_start_date'])
+    # Find actual start date (use available data if backtest_start is too early)
+    actual_start = navs.index[navs.index >= backtest_start]
+    if len(actual_start) > 0:
+        display_start = actual_start[0]
+    else:
+        display_start = navs.index[0]
+        st.warning(f"Backtest start date {backtest_start.strftime('%Y-%m-%d')} is after available data. Using {display_start.strftime('%Y-%m-%d')} instead.")
+
+    # Filter and rebase NAVs for display
+    navs_display = navs[display_start:].copy()
+    navs_rebased = rebase(navs_display)
 
     # ==========================================================================
     # KPI Section
     # ==========================================================================
     st.subheader("Key Performance Indicators")
 
-    kpis = calculate_kpis(navs)
+    # Show backtest period info
+    st.caption(f"Backtest Period: {display_start.strftime('%Y-%m-%d')} ~ {navs_display.index[-1].strftime('%Y-%m-%d')}")
+
+    kpis = calculate_kpis(navs_display)
     cols = st.columns(len(kpis))
 
     for i, (name, metrics) in enumerate(kpis.items()):
@@ -275,14 +386,25 @@ if 'dataset' in st.session_state:
     # ==========================================================================
     st.header("Performance Charts")
 
-    # NAV Chart
-    navs_rebased = rebase(navs)
+    # Chart config: only keep download and fullscreen buttons
+    chart_config = {
+        'displayModeBar': True,
+        'modeBarButtonsToRemove': [
+            'zoom2d', 'pan2d', 'select2d', 'lasso2d', 'zoomIn2d', 'zoomOut2d',
+            'autoScale2d', 'resetScale2d', 'hoverClosestCartesian',
+            'hoverCompareCartesian', 'toggleSpikelines'
+        ],
+        'modeBarButtonsToAdd': [],
+        'displaylogo': False,
+    }
+
+    # NAV Chart (already rebased above)
     fig_nav = create_nav_chart(navs_rebased, title="Portfolio NAV (Rebased to 100)")
-    st.plotly_chart(fig_nav, use_container_width=True)
+    st.plotly_chart(fig_nav, use_container_width=True, config=chart_config)
 
     # Drawdown Chart (full width to match NAV chart)
     fig_dd = create_drawdown_chart(navs_rebased, title="Drawdown (%)", height=350)
-    st.plotly_chart(fig_dd, use_container_width=True)
+    st.plotly_chart(fig_dd, use_container_width=True, config=chart_config)
 
     # Signal Category Table (Q5~Q1 with all tickers)
     latest_signal = get_signal_ranking(signal)
@@ -293,13 +415,13 @@ if 'dataset' in st.session_state:
         n_quantiles=params['n_quantiles'],
         title=""
     )
-    st.plotly_chart(fig_category, use_container_width=True)
+    st.plotly_chart(fig_category, use_container_width=True, config=chart_config)
 
     # Quantile Spread (only for Quantile strategy)
-    if params['strategy_type'] == "Quantile" and 'Q1' in navs.columns and 'Q5' in navs.columns:
+    if params['strategy_type'] == "Quantile" and 'Q1' in navs_display.columns and 'Q5' in navs_display.columns:
         st.subheader("Quantile Spread (Q5 - Q1)")
-        fig_spread = create_quantile_spread_chart(navs)
-        st.plotly_chart(fig_spread, use_container_width=True)
+        fig_spread = create_quantile_spread_chart(navs_display)
+        st.plotly_chart(fig_spread, use_container_width=True, config=chart_config)
 
     # ==========================================================================
     # Holdings Heatmap
@@ -311,15 +433,15 @@ if 'dataset' in st.session_state:
         wgt, _ = compute_weight_top_k(
             dataset, signal,
             top_k=params['top_k'],
-            inverse_vol=params['inverse_vol']
+            weight_method=params['weight_method']
         )
-        selected_quantile = f"Top-{params['top_k']}"
+        selected_quantile = "All" if params['top_k'] is None else f"Top-{params['top_k']}"
     else:
         from src.portfolio import compute_weight_quantile
         q_wgts, _ = compute_weight_quantile(
             dataset, signal,
             n_quantiles=params['n_quantiles'],
-            inverse_vol=params['inverse_vol']
+            weight_method=params['weight_method']
         )
 
         # Quantile selector (default Q5 = best performers)
@@ -354,16 +476,16 @@ if 'dataset' in st.session_state:
         title=f"Monthly Holdings - {selected_quantile} (Last 36 Months)",
         height=chart_height,
     )
-    st.plotly_chart(fig_heatmap, use_container_width=True)
+    st.plotly_chart(fig_heatmap, use_container_width=True, config=chart_config)
 
     # ==========================================================================
     # Statistics Table
     # ==========================================================================
     st.header("Performance Statistics")
 
-    stats = summary_stats(navs)
+    stats = summary_stats(navs_display)
     fig_table = create_returns_table(stats)
-    st.plotly_chart(fig_table, use_container_width=True)
+    st.plotly_chart(fig_table, use_container_width=True, config=chart_config)
 
     # Also show as DataFrame for easy copying
     with st.expander("Show as DataFrame"):

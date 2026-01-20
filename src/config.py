@@ -40,6 +40,7 @@ TICKER_DESCRIPTIONS = {
 
 # Default parameters
 DEFAULT_START_DATE = '2000-01-01'
+DEFAULT_BACKTEST_START_DATE = '2015-01-01'
 DEFAULT_SHORT_WINDOW = 4
 DEFAULT_MID_WINDOW = 7
 DEFAULT_LONG_WINDOW = 11
@@ -51,3 +52,10 @@ DEFAULT_N_QUANTILES = 5
 DEFAULT_THRESH = 10
 DEFAULT_CAPITAL = 1000
 DEFAULT_TCOST = 0.002
+
+# Weight method options
+WEIGHT_METHODS = {
+    "Equal Weight": "equal",
+    "Inverse Volatility": "inverse_vol",
+    "Rank Weight": "rank",
+}

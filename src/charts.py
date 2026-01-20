@@ -41,6 +41,9 @@ def create_nav_chart(
         yaxis_title="NAV",
         height=height,
         hovermode='x unified',
+        dragmode=False,
+        xaxis=dict(fixedrange=True),
+        yaxis=dict(fixedrange=True),
         legend=dict(
             orientation="h",
             yanchor="bottom",
@@ -92,6 +95,9 @@ def create_drawdown_chart(
         yaxis_title="Drawdown (%)",
         height=height,
         hovermode='x unified',
+        dragmode=False,
+        xaxis=dict(fixedrange=True),
+        yaxis=dict(fixedrange=True),
         showlegend=False,
     )
 
@@ -139,6 +145,9 @@ def create_allocation_chart(
         yaxis_title="Weight",
         height=height,
         hovermode='x unified',
+        dragmode=False,
+        xaxis=dict(fixedrange=True),
+        yaxis=dict(fixedrange=True),
         legend=dict(
             orientation="h",
             yanchor="bottom",
@@ -197,6 +206,7 @@ def create_holding_heatmap(
         xaxis_title="Month",
         yaxis_title="Ticker",
         height=height,
+        dragmode=False,
         xaxis=dict(
             type="date",
             tickmode="array",
@@ -204,12 +214,14 @@ def create_holding_heatmap(
             ticktext=ticktext,
             tickangle=45,
             tickfont=dict(size=12),
+            fixedrange=True,
         ),
         yaxis=dict(
             tickmode='linear',
             tick0=0,
             dtick=1,
             autorange="reversed",
+            fixedrange=True,
         ),
     )
 
@@ -342,6 +354,9 @@ def create_quantile_spread_chart(
         xaxis_title="Date",
         yaxis_title="Spread (NAV)",
         height=height,
+        dragmode=False,
+        xaxis=dict(fixedrange=True),
+        yaxis=dict(fixedrange=True),
     )
 
     return fig
