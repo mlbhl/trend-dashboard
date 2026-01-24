@@ -300,7 +300,7 @@ def create_signal_category_table(
         cells=dict(
             values=cell_values,
             fill_color='white',
-            font=dict(color='black', size=14),
+            font=dict(color='black', size=12),
             align='center',
             height=30,
         ),
@@ -309,7 +309,7 @@ def create_signal_category_table(
     fig.update_layout(
         title=dict(text=title, font=dict(size=16)),
         margin=dict(l=10, r=10, t=40, b=10),
-        height=60 + max_len * 40,
+        height=50 + max_len * 40,
     )
 
     return fig
