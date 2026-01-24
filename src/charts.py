@@ -185,7 +185,7 @@ def create_holding_heatmap(
     weight_t = w.T
     x_dates = pd.to_datetime(weight_t.columns)
 
-    step = 1
+    step = 3
     tick_idx = list(range(0, len(x_dates), step))
     tickvals = x_dates[tick_idx]
     ticktext = [d.strftime("%y.%m") for d in tickvals]
@@ -213,7 +213,7 @@ def create_holding_heatmap(
             tickvals=tickvals,
             ticktext=ticktext,
             tickangle=45,
-            tickfont=dict(size=12),
+            #tickfont=dict(size=12),
             fixedrange=True,
         ),
         yaxis=dict(
@@ -309,7 +309,7 @@ def create_signal_category_table(
     fig.update_layout(
         title=dict(text=title, font=dict(size=16)),
         margin=dict(l=10, r=10, t=40, b=10),
-        height=max(250, 40 + max_len * 30),
+        height=max(300, 40 + max_len * 30),
     )
 
     return fig
