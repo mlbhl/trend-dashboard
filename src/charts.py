@@ -309,7 +309,7 @@ def create_signal_category_table(
     fig.update_layout(
         title=dict(text=title, font=dict(size=16)),
         margin=dict(l=10, r=10, t=40, b=10),
-        height=max(300, 40 + max_len * 30),
+        height=max(500, 40 + max_len * 30),
     )
 
     return fig
