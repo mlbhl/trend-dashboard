@@ -65,9 +65,9 @@ def calc_vol(
     ret = price.pct_change()
 
     if ew:
-        vol = ret.ewm(com=com, min_periods=com * 2).std() * np.sqrt(260)
+        vol = ret.ewm(com=com, min_periods=com * 2).std() * np.sqrt(252)
     else:
-        vol = ret.rolling(window).std() * np.sqrt(260)
+        vol = ret.rolling(window).std() * np.sqrt(252)
 
     return vol
 

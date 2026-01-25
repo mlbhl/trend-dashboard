@@ -376,12 +376,12 @@ def create_returns_table(stats: pd.DataFrame) -> go.Figure:
     formatted = stats.copy()
 
     # Format specific rows
-    pct_rows = ['cagr', 'mean', 'vol', 'max', 'min', 'mdd']
+    pct_rows = ['cumulative', 'cagr', 'mean', 'vol', 'max', 'min', 'mdd']
     for row in pct_rows:
         if row in formatted.index:
-            formatted.loc[row] = formatted.loc[row].apply(lambda x: f'{x:.2%}')
+            formatted.loc[row] = formatted.loc[row].apply(lambda x: f'{x:.1%}')
 
-    ratio_rows = ['sharpe', 'skew', 'kurt', 'mean-t-stat']
+    ratio_rows = ['sharpe', 'skew', 'kurt']
     for row in ratio_rows:
         if row in formatted.index:
             formatted.loc[row] = formatted.loc[row].apply(lambda x: f'{x:.2f}')

@@ -6,6 +6,7 @@ from .signals import generate_signal, calc_vol
 from .portfolio import compute_weight_top_k, compute_weight_quantile, backtest
 from .metrics import summary_stats, rebase
 from .charts import create_nav_chart, create_allocation_chart, create_holding_heatmap, create_signal_category_table
+from .optimizer import optimize_sharpe
 
 __all__ = [
     'ALPHA_LIST',

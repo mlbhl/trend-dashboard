@@ -22,6 +22,7 @@ from src.config import (
 )
 from src.data import load_price_data
 from src.signals import generate_signal, get_signal_ranking
+from src.optimizer import optimize_sharpe
 from src.portfolio import (
     compute_weight_top_k,
     run_quantile_backtest,
@@ -84,6 +85,34 @@ st.sidebar.subheader("Ticker Selection")
 if 'custom_tickers' not in st.session_state:
     st.session_state['custom_tickers'] = []
 
+# Apply optimized params if available (must be before widget creation)
+if 'optimized_params' in st.session_state:
+    bp = st.session_state['optimized_params']
+    st.session_state['short_window'] = bp['short_window']
+    st.session_state['mid_window'] = bp['mid_window']
+    st.session_state['long_window'] = bp['long_window']
+    st.session_state['short_wgt'] = bp['short_wgt']
+    st.session_state['mid_wgt'] = bp['mid_wgt']
+    st.session_state['long_wgt'] = bp['long_wgt']
+    st.session_state['weight_mode'] = "Custom"
+    del st.session_state['optimized_params']
+
+# Initialize signal parameters in session state
+if 'short_window' not in st.session_state:
+    st.session_state['short_window'] = DEFAULT_SHORT_WINDOW
+if 'mid_window' not in st.session_state:
+    st.session_state['mid_window'] = DEFAULT_MID_WINDOW
+if 'long_window' not in st.session_state:
+    st.session_state['long_window'] = DEFAULT_LONG_WINDOW
+if 'short_wgt' not in st.session_state:
+    st.session_state['short_wgt'] = DEFAULT_SHORT_WEIGHT
+if 'mid_wgt' not in st.session_state:
+    st.session_state['mid_wgt'] = DEFAULT_MID_WEIGHT
+if 'long_wgt' not in st.session_state:
+    st.session_state['long_wgt'] = DEFAULT_LONG_WEIGHT
+if 'weight_mode' not in st.session_state:
+    st.session_state['weight_mode'] = "Custom"
+
 # Combine default and custom tickers
 available_tickers = ALPHA_LIST.copy() + st.session_state['custom_tickers']
 
@@ -134,15 +163,18 @@ thresh = st.sidebar.slider(
 st.sidebar.subheader("Signal Parameters")
 short_window = st.sidebar.slider(
     "Short Window (months)",
-    min_value=1, max_value=12, value=DEFAULT_SHORT_WINDOW
+    min_value=1, max_value=12,
+    key="short_window"
 )
 mid_window = st.sidebar.slider(
     "Mid Window (months)",
-    min_value=1, max_value=12, value=DEFAULT_MID_WINDOW
+    min_value=1, max_value=12,
+    key="mid_window"
 )
 long_window = st.sidebar.slider(
     "Long Window (months)",
-    min_value=1, max_value=12, value=DEFAULT_LONG_WINDOW
+    min_value=1, max_value=12,
+    key="long_window"
 )
 
 # Weight parameters
@@ -150,13 +182,13 @@ st.sidebar.subheader("Weight Parameters")
 weight_mode = st.sidebar.radio(
     "Weight Calculation",
     ["Equal (1/3 each)", "Custom"],
-    index=1
+    key="weight_mode",
 )
 
 if weight_mode == "Custom":
-    short_wgt = st.sidebar.slider("Short Weight", 0.0, 1.0, DEFAULT_SHORT_WEIGHT, 0.01)
-    mid_wgt = st.sidebar.slider("Mid Weight", 0.0, 1.0, DEFAULT_MID_WEIGHT, 0.01)
-    long_wgt = st.sidebar.slider("Long Weight", 0.0, 1.0, DEFAULT_LONG_WEIGHT, 0.01)
+    short_wgt = st.sidebar.slider("Short Weight", 0.0, 1.0, step=0.01, key="short_wgt")
+    mid_wgt = st.sidebar.slider("Mid Weight", 0.0, 1.0, step=0.01, key="mid_wgt")
+    long_wgt = st.sidebar.slider("Long Weight", 0.0, 1.0, step=0.01, key="long_wgt")
     # Normalize weights
     total_wgt = short_wgt + mid_wgt + long_wgt
     if total_wgt > 0:
@@ -206,6 +238,92 @@ tcost = st.sidebar.number_input(
     "Transaction Cost (one-way)",
     min_value=0.0, max_value=0.01, value=0.0, step=0.0005, format="%.4f"
 )
+
+# Optimize button
+st.sidebar.subheader("Parameter Optimization")
+st.sidebar.caption("Optimize **Top-K strategy**. Use current Top-K, Weighting Method, and Transaction Cost settings.")
+
+opt_mode = st.sidebar.radio(
+    "Search Mode",
+    ["Full Grid", "Random Grid"],
+    index=1,
+    horizontal=True,
+    help="Full Grid: 220 lookback combos (short<mid<long from 1-12mo) × 66 weight combos (10% step, sum=100%) = 14,520"
+)
+
+if opt_mode == "Random Grid":
+    col_samples, col_seed = st.sidebar.columns(2)
+    with col_samples:
+        n_samples_input = st.text_input("Samples", value="500")
+        try:
+            n_samples = int(n_samples_input)
+            n_samples = max(100, min(14520, n_samples))
+        except ValueError:
+            n_samples = 500
+    with col_seed:
+        seed_input = st.text_input("Seed", value="", help="Random seed for reproducibility")
+        opt_seed = int(seed_input) if seed_input.strip().isdigit() else None
+else:
+    n_samples = None
+    opt_seed = None
+
+if st.sidebar.button("🔍 Optimize Parameters"):
+    if len(selected_tickers) < 2:
+        st.sidebar.error("Select at least 2 tickers first.")
+    else:
+        with st.spinner("Loading data for optimization..."):
+            opt_dataset, _ = load_price_data(
+                selected_tickers,
+                start_date=str(start_date),
+            )
+
+        progress_bar = st.sidebar.progress(0, text="Optimizing...")
+
+        def update_progress(current, total):
+            progress = current / total
+            progress_bar.progress(progress, text=f"Testing {current}/{total} combinations...")
+
+        with st.spinner("Running optimization..."):
+            result = optimize_sharpe(
+                price=opt_dataset,
+                top_k=None if select_all_tickers else top_k,
+                weight_method=weight_method,
+                tcost=tcost,
+                start_date=str(backtest_start_date),
+                thresh=thresh,
+                n_samples=n_samples,
+                seed=opt_seed,
+                progress_callback=update_progress,
+            )
+
+        progress_bar.empty()
+
+        if result['best_params'] is not None:
+            bp = result['best_params']
+            # Store optimized params for next render cycle
+            st.session_state['optimized_params'] = bp
+            st.session_state['optimization_result'] = {
+                'sharpe': result['best_sharpe'],
+                'tested': result['total_combinations'],
+                'total': result['total_possible'],
+            }
+            st.rerun()
+        else:
+            st.sidebar.error("Optimization failed. Try different settings.")
+
+# Show optimization result message
+if 'optimization_result' in st.session_state:
+    res = st.session_state['optimization_result']
+    tested_info = f"{res['tested']}/{res['total']}"
+    st.sidebar.success(f"""
+    **Optimization Complete!** (tested {tested_info})
+    - Sharpe: {res['sharpe']:.3f}
+    - Windows: {st.session_state['short_window']}/{st.session_state['mid_window']}/{st.session_state['long_window']} mo
+    - Weights: {st.session_state['short_wgt']:.0%}/{st.session_state['mid_wgt']:.0%}/{st.session_state['long_wgt']:.0%}
+
+    Parameters updated. Click **Run Analysis** to apply.
+    """)
+    del st.session_state['optimization_result']
 
 # Benchmark settings
 st.sidebar.subheader("Benchmark Settings")
@@ -376,10 +494,11 @@ if 'dataset' in st.session_state:
     for i, (name, metrics) in enumerate(kpis.items()):
         with cols[i]:
             st.markdown(f"**{name}**")
-            st.metric("CAGR", f"{metrics['cagr']:.2%}")
+            st.metric("CAGR", f"{metrics['cagr']:.1%}")
+            st.metric("Volatility", f"{metrics['vol']:.1%}")
             st.metric("Sharpe", f"{metrics['sharpe']:.2f}")
-            st.metric("MDD", f"{metrics['mdd']:.2%}")
-            st.metric("YTD", f"{metrics['ytd']:.2%}")
+            st.metric("MDD", f"{metrics['mdd']:.1%}")
+            st.metric("YTD", f"{metrics['ytd']:.1%}")
 
     # ==========================================================================
     # Charts Section

@@ -25,13 +25,13 @@ def summary_stats(navs: pd.DataFrame | pd.Series) -> pd.DataFrame:
 
     # Time period
     n_samples = len(returns)
-    n_years = n_samples / 260  # Business days per year
+    n_years = n_samples / 252  # Trading days per year
 
     # Basic return statistics
     total_return = navs.iloc[-1] / navs.iloc[0] - 1
     cagr = (navs.iloc[-1] / navs.iloc[0]) ** (1 / n_years) - 1
-    mean_return = returns.mean() * 260
-    vol = returns.std() * np.sqrt(260)
+    mean_return = returns.mean() * 252
+    vol = returns.std() * np.sqrt(252)
 
     # Risk-adjusted
     sharpe = mean_return / vol
@@ -51,9 +51,9 @@ def summary_stats(navs: pd.DataFrame | pd.Series) -> pd.DataFrame:
     stats = pd.DataFrame({
         'nyears': n_years,
         'nsamples': n_samples,
+        'cumulative': total_return,
         'cagr': cagr,
         'mean': mean_return,
-        'mean-t-stat': t_stat,
         'vol': vol,
         'skew': skew,
         'kurt': kurt,

@@ -173,10 +173,9 @@ def backtest(
             if date != start_date:
                 prev_date = all_dates[i - 1]
                 prev_equity = nav.loc[prev_date]
-                L_prev = prev_w.sum()
                 dollar_pnl = dollar_pos * ret_sub.loc[date].values
                 dollar_pos += dollar_pnl
-                prev_w = (dollar_pos / dollar_pos.sum()) * L_prev
+                prev_w = dollar_pos / dollar_pos.sum()
                 new_w = weight.loc[date].values
                 turn = np.sum(np.abs(new_w - prev_w)) / 2
                 equity_after_cost = (prev_equity + dollar_pnl.sum()) * (1 - turn * tcost * 2)
@@ -192,11 +191,10 @@ def backtest(
         else:
             prev_date = all_dates[i - 1]
             prev_equity = nav.loc[prev_date]
-            L_prev = prev_w.sum()
             dollar_pnl = dollar_pos * ret_sub.loc[date].values
             dollar_pos += dollar_pnl
             nav.loc[date] = prev_equity + dollar_pnl.sum()
-            prev_w = (dollar_pos / dollar_pos.sum()) * L_prev
+            prev_w = dollar_pos / dollar_pos.sum()
 
     turnover = pd.Series(turnover)
     return nav, turnover
