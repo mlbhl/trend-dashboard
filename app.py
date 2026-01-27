@@ -1,6 +1,7 @@
 """Trend Dashboard - Momentum Strategy Analysis App"""
 
 import streamlit as st
+import numpy as np
 import pandas as pd
 from pandas.tseries.offsets import BMonthBegin
 
@@ -22,7 +23,7 @@ from src.config import (
 )
 from src.data import load_price_data
 from src.signals import generate_signal, get_signal_ranking
-from src.optimizer import optimize_sharpe
+from src.optimizer import optimize_sharpe, walk_forward_optimize
 from src.portfolio import (
     compute_weight_top_k,
     run_quantile_backtest,
@@ -84,6 +85,18 @@ st.sidebar.subheader("Ticker Selection")
 # Initialize custom tickers in session state
 if 'custom_tickers' not in st.session_state:
     st.session_state['custom_tickers'] = []
+
+# Clean up if optimization was stopped mid-execution
+if st.session_state.get('opt_running', False):
+    st.session_state['opt_running'] = False
+    if 'optimization_result' in st.session_state:
+        del st.session_state['optimization_result']
+
+# Clean up if walk-forward was stopped mid-execution
+if st.session_state.get('wf_running', False):
+    st.session_state['wf_running'] = False
+    if 'walk_forward_result' in st.session_state:
+        del st.session_state['walk_forward_result']
 
 # Apply optimized params if available (must be before widget creation)
 if 'optimized_params' in st.session_state:
@@ -239,92 +252,6 @@ tcost = st.sidebar.number_input(
     min_value=0.0, max_value=0.01, value=0.0, step=0.0005, format="%.4f"
 )
 
-# Optimize button
-st.sidebar.subheader("Parameter Optimization")
-st.sidebar.caption("Optimize **Top-K strategy**. Use current Top-K, Weighting Method, and Transaction Cost settings.")
-
-opt_mode = st.sidebar.radio(
-    "Search Mode",
-    ["Full Grid", "Random Grid"],
-    index=1,
-    horizontal=True,
-    help="Full Grid: 220 lookback combos (short<mid<long from 1-12mo) × 66 weight combos (10% step, sum=100%) = 14,520"
-)
-
-if opt_mode == "Random Grid":
-    col_samples, col_seed = st.sidebar.columns(2)
-    with col_samples:
-        n_samples_input = st.text_input("Samples", value="500")
-        try:
-            n_samples = int(n_samples_input)
-            n_samples = max(100, min(14520, n_samples))
-        except ValueError:
-            n_samples = 500
-    with col_seed:
-        seed_input = st.text_input("Seed", value="", help="Random seed for reproducibility")
-        opt_seed = int(seed_input) if seed_input.strip().isdigit() else None
-else:
-    n_samples = None
-    opt_seed = None
-
-if st.sidebar.button("🔍 Optimize Parameters"):
-    if len(selected_tickers) < 2:
-        st.sidebar.error("Select at least 2 tickers first.")
-    else:
-        with st.spinner("Loading data for optimization..."):
-            opt_dataset, _ = load_price_data(
-                selected_tickers,
-                start_date=str(start_date),
-            )
-
-        progress_bar = st.sidebar.progress(0, text="Optimizing...")
-
-        def update_progress(current, total):
-            progress = current / total
-            progress_bar.progress(progress, text=f"Testing {current}/{total} combinations...")
-
-        with st.spinner("Running optimization..."):
-            result = optimize_sharpe(
-                price=opt_dataset,
-                top_k=None if select_all_tickers else top_k,
-                weight_method=weight_method,
-                tcost=tcost,
-                start_date=str(backtest_start_date),
-                thresh=thresh,
-                n_samples=n_samples,
-                seed=opt_seed,
-                progress_callback=update_progress,
-            )
-
-        progress_bar.empty()
-
-        if result['best_params'] is not None:
-            bp = result['best_params']
-            # Store optimized params for next render cycle
-            st.session_state['optimized_params'] = bp
-            st.session_state['optimization_result'] = {
-                'sharpe': result['best_sharpe'],
-                'tested': result['total_combinations'],
-                'total': result['total_possible'],
-            }
-            st.rerun()
-        else:
-            st.sidebar.error("Optimization failed. Try different settings.")
-
-# Show optimization result message
-if 'optimization_result' in st.session_state:
-    res = st.session_state['optimization_result']
-    tested_info = f"{res['tested']}/{res['total']}"
-    st.sidebar.success(f"""
-    **Optimization Complete!** (tested {tested_info})
-    - Sharpe: {res['sharpe']:.3f}
-    - Windows: {st.session_state['short_window']}/{st.session_state['mid_window']}/{st.session_state['long_window']} mo
-    - Weights: {st.session_state['short_wgt']:.0%}/{st.session_state['mid_wgt']:.0%}/{st.session_state['long_wgt']:.0%}
-
-    Parameters updated. Click **Run Analysis** to apply.
-    """)
-    del st.session_state['optimization_result']
-
 # Benchmark settings
 st.sidebar.subheader("Benchmark Settings")
 bm_type = st.sidebar.radio(
@@ -355,6 +282,229 @@ if bm_type == "Custom Ticker":
     )
     custom_bm_ticker = st.session_state['bm_ticker']
     st.sidebar.success(f"✓ Benchmark: **{custom_bm_ticker}**")
+
+# Optimize button
+st.sidebar.subheader("Parameter Optimization")
+st.sidebar.caption("Optimize **Top-K strategy**. Uses Backtest Start Date, Top-K, Weighting Method, and Transaction Cost settings.")
+
+opt_mode = st.sidebar.radio(
+    "Search Mode",
+    ["Full Grid", "Random Grid"],
+    index=1,
+    horizontal=True,
+    help="Full Grid: 56 lookback combos (short<mid<long from 1-12mo) × 36 weight combos (10% step, sum=100%) = 2,016"
+)
+
+if opt_mode == "Random Grid":
+    col_samples, col_seed = st.sidebar.columns(2)
+    with col_samples:
+        n_samples_input = st.text_input("Samples", value="500")
+        try:
+            n_samples = int(n_samples_input)
+            n_samples = max(100, min(2016, n_samples))
+        except ValueError:
+            n_samples = 500
+    with col_seed:
+        seed_input = st.text_input("Seed", value="", help="Random seed for reproducibility (leave empty for random)", key="opt_seed")
+        opt_seed = int(seed_input) if seed_input.strip().isdigit() else None
+else:
+    n_samples = None
+    opt_seed = None
+
+if st.sidebar.button("🔍 Optimize Parameters"):
+    if len(selected_tickers) < 2:
+        st.sidebar.error("Select at least 2 tickers first.")
+    else:
+        # Mark as running (will be checked on next page load if stopped)
+        st.session_state['opt_running'] = True
+
+        with st.spinner("Loading data for optimization..."):
+            opt_dataset, _ = load_price_data(
+                selected_tickers,
+                start_date=str(start_date),
+            )
+
+        progress_bar = st.sidebar.progress(0, text="Optimizing...")
+
+        def update_progress(current, total):
+            progress = current / total
+            progress_bar.progress(progress, text=f"Testing {current}/{total} combinations...")
+
+        with st.spinner("Running optimization..."):
+            result = optimize_sharpe(
+                price=opt_dataset,
+                top_k=None if select_all_tickers else top_k,
+                weight_method=weight_method,
+                tcost=tcost,
+                start_date=str(backtest_start_date),
+                thresh=thresh,
+                n_samples=n_samples,
+                seed=opt_seed,
+                progress_callback=update_progress,
+            )
+
+        # Only reaches here if completed (not stopped)
+        st.session_state['opt_running'] = False
+        progress_bar.empty()
+
+        if result['best_params'] is not None:
+            bp = result['best_params']
+            # Store optimized params for next render cycle
+            st.session_state['optimized_params'] = bp
+            st.session_state['optimization_result'] = {
+                'sharpe': result['best_sharpe'],
+                'tested': result['total_combinations'],
+                'total': result['total_possible'],
+            }
+            st.rerun()
+        else:
+            st.sidebar.error("Optimization failed. Try different settings.")
+
+# Show optimization result message
+if 'optimization_result' in st.session_state:
+    res = st.session_state['optimization_result']
+    tested_info = f"{res['tested']}/{res['total']}"
+    st.sidebar.success(f"""
+    **Optimization Complete!** (tested {tested_info})
+    - Sharpe: {res['sharpe']:.3f}
+    - Windows: {st.session_state['short_window']}/{st.session_state['mid_window']}/{st.session_state['long_window']} mo
+    - Weights: {st.session_state['short_wgt']:.0%}/{st.session_state['mid_wgt']:.0%}/{st.session_state['long_wgt']:.0%}
+
+    Parameters updated. Click **Run Analysis** to apply.
+    """)
+    del st.session_state['optimization_result']
+
+# Walk-Forward Optimization
+st.sidebar.subheader("Walk-Forward Analysis")
+st.sidebar.caption("Out-of-sample validation. Uses Download Start Date.")
+
+with st.sidebar.expander("Walk-Forward Settings"):
+    wf_window_type = st.radio(
+        "Window Type",
+        ["Rolling", "Expanding"],
+        index=0,
+        horizontal=True,
+        help="Rolling: Fixed train window. Expanding: Train from start, grows each fold."
+    )
+    if wf_window_type == "Rolling":
+        wf_train = st.number_input("Train Period (months)", min_value=12, value=36, step=12)
+    else:
+        wf_train = st.number_input("Min Train Period (months)", min_value=12, value=36, step=12,
+                                   help="Minimum training period for the first fold")
+    wf_test = st.number_input("Test Period (months)", min_value=1, value=12, step=1)
+    wf_step = st.number_input("Step Size (months)", min_value=1, value=12, step=1)
+    wf_samples = st.number_input("Samples per Fold", min_value=100, max_value=5000, value=500, step=100)
+    wf_seed_input = st.text_input("Seed", value="", help="Random seed for reproducibility (leave empty for random)", key="wf_seed")
+    wf_seed = int(wf_seed_input) if wf_seed_input.strip().isdigit() else None
+
+if st.sidebar.button("🔄 Walk-Forward Optimize"):
+    if len(selected_tickers) < 2:
+        st.sidebar.error("Select at least 2 tickers first.")
+    else:
+        # Mark as running (will be checked on next page load if stopped)
+        st.session_state['wf_running'] = True
+
+        # Clear previous walk-forward result to avoid stale data on stop
+        if 'walk_forward_result' in st.session_state:
+            del st.session_state['walk_forward_result']
+
+        # Get benchmark settings from session state
+        wf_bm_ticker = st.session_state.get('bm_ticker', None)
+        wf_bm_data = None
+
+        with st.spinner("Loading data for walk-forward..."):
+            wf_dataset, _ = load_price_data(
+                selected_tickers,
+                start_date=str(start_date),
+            )
+
+            # Load benchmark data if custom ticker is set
+            if wf_bm_ticker and wf_bm_ticker not in wf_dataset.columns:
+                wf_bm_dataset, _ = load_price_data(
+                    [wf_bm_ticker],
+                    start_date=str(start_date),
+                )
+                if wf_bm_ticker in wf_bm_dataset.columns:
+                    wf_bm_data = wf_bm_dataset[wf_bm_ticker]
+
+        wf_progress_bar = st.sidebar.progress(0, text="Walk-Forward Optimization...")
+        wf_status = st.sidebar.empty()
+
+        def wf_update_progress(fold, total_folds, step, total_steps):
+            # total_folds + 1 means final training
+            if fold > total_folds:
+                overall = (total_folds * total_steps + step) / ((total_folds + 1) * total_steps)
+                wf_progress_bar.progress(min(overall, 0.99), text=f"Final Training - {step}/{total_steps}")
+                wf_status.caption("Training on latest data for recommended params...")
+            else:
+                overall = ((fold - 1) * total_steps + step) / ((total_folds + 1) * total_steps)
+                wf_progress_bar.progress(overall, text=f"Fold {fold}/{total_folds} - {step}/{total_steps}")
+                wf_status.caption(f"Training fold {fold} of {total_folds}...")
+
+        with st.spinner("Running walk-forward optimization..."):
+            wf_result = walk_forward_optimize(
+                price=wf_dataset,
+                train_months=wf_train,
+                test_months=wf_test,
+                step_months=wf_step,
+                window_type=wf_window_type.lower(),
+                top_k=None if select_all_tickers else top_k,
+                weight_method=weight_method,
+                tcost=tcost,
+                thresh=thresh,
+                n_samples=wf_samples,
+                seed=wf_seed,
+                bm_ticker=wf_bm_ticker,
+                bm_data=wf_bm_data,
+                progress_callback=wf_update_progress,
+            )
+
+        # Only reaches here if completed (not stopped)
+        st.session_state['wf_running'] = False
+        wf_progress_bar.empty()
+        wf_status.empty()
+
+        if 'error' in wf_result:
+            st.sidebar.error(wf_result['error'])
+        else:
+            # Save benchmark settings used during walk-forward execution
+            wf_result['_bm_type'] = bm_type
+            wf_result['_bm_ticker'] = wf_bm_ticker if bm_type == "Custom Ticker" else None
+            wf_result['_bm_data'] = wf_bm_data
+            st.session_state['walk_forward_result'] = wf_result
+            st.rerun()
+
+# Show walk-forward result
+if 'walk_forward_result' in st.session_state:
+    wf = st.session_state['walk_forward_result']
+    decay = wf['sharpe_decay']
+    decay_str = f"{decay:+.2f}" if not np.isnan(decay) else "N/A"
+    wf_type = wf.get('window_type', 'rolling').capitalize()
+
+    st.sidebar.info(f"""
+    **Walk-Forward Complete!** ({wf['valid_folds']}/{wf['total_folds']} folds, {wf_type})
+    - In-Sample Sharpe (avg): **{wf['is_sharpe_avg']:.2f}**
+    - Out-of-Sample Sharpe (avg): **{wf['oos_sharpe_avg']:.2f}**
+    - Combined OOS Sharpe: **{wf['oos_sharpe']:.2f}**
+    - Sharpe Decay: **{decay_str}**
+
+    {'⚠️ High decay suggests overfitting!' if decay > 0.5 else '✓ Reasonable stability' if not np.isnan(decay) else ''}
+    """)
+
+    # Show final recommended params
+    fp = wf.get('final_params')
+    if fp:
+        ftp = wf.get('final_train_period', {})
+        st.sidebar.success(f"""
+        **Recommended Params** (trained on {ftp.get('start', '?')[:7]} ~ {ftp.get('end', '?')[:7]})
+        - Windows: **{fp['short_window']}/{fp['mid_window']}/{fp['long_window']}** mo
+        - Weights: **{fp['short_wgt']:.0%}/{fp['mid_wgt']:.0%}/{fp['long_wgt']:.0%}**
+        - Sharpe: **{wf.get('final_sharpe', 0):.2f}**
+        """)
+
+        if st.sidebar.button("✅ Apply Recommended Params"):
+            st.session_state['optimized_params'] = fp
+            st.rerun()
 
 # =============================================================================
 # Main Content
@@ -560,6 +710,13 @@ if 'dataset' in st.session_state:
     )
     st.plotly_chart(fig_category, use_container_width=True, config=chart_config)
 
+    # Raw Signal Data
+    with st.expander("Show Raw Signal Data"):
+        st.subheader("Latest Signal Ranking")
+        signal_display = signal.iloc[-5:].T.copy()
+        signal_display.columns = signal_display.columns.strftime('%Y-%m-%d')
+        st.dataframe(signal_display.style.format("{:.0f}"))
+
     # Quantile Spread (only for Quantile strategy)
     if params['strategy_type'] == "Quantile" and 'Q1' in navs_display.columns and 'Q5' in navs_display.columns:
         st.subheader("Quantile Spread (Q5 - Q1)")
@@ -633,6 +790,9 @@ if 'dataset' in st.session_state:
     # Also show as DataFrame for easy copying
     with st.expander("Show as DataFrame"):
         st.dataframe(stats.T.style.format({
+            'nyears': '{:.1f}',
+            'nsamples': '{:.0f}',
+            'cumulative': '{:.2%}',
             'cagr': '{:.2%}',
             'mean': '{:.2%}',
             'vol': '{:.2%}',
@@ -645,11 +805,182 @@ if 'dataset' in st.session_state:
         }))
 
     # ==========================================================================
-    # Raw Data Section
+    # Walk-Forward Analysis Results
     # ==========================================================================
-    with st.expander("Show Raw Signal Data"):
-        st.subheader("Latest Signal Ranking")
-        st.dataframe(signal.iloc[-5:].T.style.format("{:.0f}"))
+    if 'walk_forward_result' in st.session_state:
+        wf = st.session_state['walk_forward_result']
+        if 'error' not in wf and wf['valid_folds'] > 0:
+            wf_type = wf.get('window_type', 'rolling').capitalize()
+            st.header(f"Walk-Forward Analysis ({wf_type} Window)")
+
+            # Summary metrics
+            col1, col2, col3, col4 = st.columns(4)
+            with col1:
+                st.metric("In-Sample Sharpe (avg)", f"{wf['is_sharpe_avg']:.2f}")
+            with col2:
+                st.metric("Out-of-Sample Sharpe (avg)", f"{wf['oos_sharpe_avg']:.2f}")
+            with col3:
+                st.metric("Combined OOS Sharpe", f"{wf['oos_sharpe']:.2f}")
+            with col4:
+                decay = wf['sharpe_decay']
+                decay_str = f"{decay:.2f}" if not np.isnan(decay) else "N/A"
+                st.metric("Sharpe Decay", decay_str,
+                         delta=None if np.isnan(decay) else f"{-decay:.2f}",
+                         delta_color="inverse")
+
+            # Interpretation
+            if not np.isnan(wf['sharpe_decay']):
+                if wf['sharpe_decay'] > 0.5:
+                    st.warning("⚠️ **High Sharpe Decay**: In-sample performance significantly exceeds out-of-sample. This suggests potential overfitting.")
+                elif wf['sharpe_decay'] > 0.2:
+                    st.info("ℹ️ **Moderate Sharpe Decay**: Some performance degradation out-of-sample. Consider simpler parameter choices.")
+                else:
+                    st.success("✓ **Low Sharpe Decay**: Strategy shows reasonable stability between in-sample and out-of-sample performance.")
+
+            # Fold-by-fold results table
+            st.subheader("Fold Results")
+            fold_df = pd.DataFrame([
+                {
+                    'Fold': f['fold'],
+                    'Train Period': f"{f['train_start'][:7]} ~ {f['train_end'][:7]}",
+                    'Test Period': f"{f['test_start'][:7]} ~ {f['test_end'][:7]}",
+                    'Windows': f"{f['params']['short_window']}/{f['params']['mid_window']}/{f['params']['long_window']}",
+                    'Weights': f"{f['params']['short_wgt']:.0%}/{f['params']['mid_wgt']:.0%}/{f['params']['long_wgt']:.0%}",
+                    'IS Sharpe': f['is_sharpe'],
+                    'OOS Sharpe': f['oos_sharpe'],
+                }
+                for f in wf['folds']
+            ])
+            st.dataframe(
+                fold_df.style.format({
+                    'IS Sharpe': '{:.2f}',
+                    'OOS Sharpe': '{:.2f}',
+                }),
+                use_container_width=True,
+                hide_index=True
+            )
+
+            # Final recommended params (trained on latest data)
+            fp = wf.get('final_params')
+            if fp:
+                st.subheader("Recommended Parameters")
+                ftp = wf.get('final_train_period', {})
+                st.caption(f"Trained on latest data: {ftp.get('start', '?')[:7]} ~ {ftp.get('end', '?')[:7]}")
+
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric("Windows (S/M/L)",
+                             f"{fp['short_window']}/{fp['mid_window']}/{fp['long_window']} mo")
+                with col2:
+                    st.metric("Weights (S/M/L)",
+                             f"{fp['short_wgt']:.0%}/{fp['mid_wgt']:.0%}/{fp['long_wgt']:.0%}")
+                with col3:
+                    st.metric("In-Sample Sharpe", f"{wf.get('final_sharpe', 0):.2f}")
+
+                st.info("💡 Use **Apply Recommended Params** button in sidebar to apply these parameters.")
+
+            # Parameter stability analysis
+            if wf['param_stability']:
+                st.subheader("Parameter Stability")
+                st.caption("How much do optimal parameters vary across folds? Lower std = more stable.")
+
+                stability_df = pd.DataFrame(wf['param_stability']).T
+                stability_df.index = ['Short Window', 'Mid Window', 'Long Window', 'Short Weight', 'Mid Weight', 'Long Weight']
+                stability_df.columns = ['Mean', 'Std', 'Min', 'Max']
+
+                # Format weights as percentages
+                for idx in ['Short Weight', 'Mid Weight', 'Long Weight']:
+                    stability_df.loc[idx] = stability_df.loc[idx] * 100
+
+                st.dataframe(
+                    stability_df.style.format({
+                        'Mean': '{:.1f}',
+                        'Std': '{:.1f}',
+                        'Min': '{:.1f}',
+                        'Max': '{:.1f}',
+                    }),
+                    use_container_width=True
+                )
+
+            # Combined OOS NAV chart
+            if wf['combined_oos_nav'] is not None:
+                st.subheader("Combined Out-of-Sample NAV")
+
+                # Use benchmark settings saved during walk-forward execution
+                wf_saved_bm_type = wf.get('_bm_type', 'Equal Weight')
+                wf_saved_bm_ticker = wf.get('_bm_ticker')
+                wf_saved_bm_data = wf.get('_bm_data')
+                wf_bm_name = wf_saved_bm_ticker if wf_saved_bm_type == "Custom Ticker" and wf_saved_bm_ticker else "Equal Weight"
+                st.caption(f"NAV from chaining all out-of-sample test periods. BM = {wf_bm_name}")
+
+                # Rebase to 100 for consistency with main chart
+                oos_nav_rebased = wf['combined_oos_nav'] / wf['combined_oos_nav'].iloc[0] * 100
+
+                import plotly.graph_objects as go
+                fig_oos = go.Figure()
+                fig_oos.add_trace(go.Scatter(
+                    x=oos_nav_rebased.index,
+                    y=oos_nav_rebased.values,
+                    mode='lines',
+                    name='Strategy (OOS)',
+                    line=dict(color='#2196F3', width=2)
+                ))
+
+                # Compute benchmark NAV using settings saved during walk-forward execution
+                oos_bm_nav = None
+                oos_date_range = wf.get('oos_date_range')
+                if oos_date_range:
+                    oos_start = oos_date_range['start']
+                    oos_end = oos_date_range['end']
+
+                    if wf_saved_bm_type == "Custom Ticker" and wf_saved_bm_data is not None:
+                        # Custom ticker: buy and hold
+                        bm_slice = wf_saved_bm_data[oos_start:oos_end]
+                        if len(bm_slice) > 0:
+                            oos_bm_nav = bm_slice / bm_slice.iloc[0] * 100
+                    else:
+                        # Equal weight: compute from dataset
+                        dataset_slice = dataset[oos_start:oos_end]
+                        if len(dataset_slice) > 0:
+                            # Simple equal weight daily return
+                            daily_ret = dataset_slice.pct_change().fillna(0)
+                            ew_ret = daily_ret.mean(axis=1)
+                            oos_bm_nav = (1 + ew_ret).cumprod() * 100
+
+                # Add benchmark if computed
+                if oos_bm_nav is not None and len(oos_bm_nav) > 0:
+                    fig_oos.add_trace(go.Scatter(
+                        x=oos_bm_nav.index,
+                        y=oos_bm_nav.values,
+                        mode='lines',
+                        name=f'BM ({wf_bm_name})',
+                        line=dict(color='#9E9E9E', width=1.5, dash='dash')
+                    ))
+
+                fig_oos.update_layout(
+                    title="Walk-Forward Out-of-Sample Performance",
+                    xaxis_title="Date",
+                    yaxis_title="NAV",
+                    template="plotly_white",
+                    height=400,
+                    legend=dict(
+                        orientation="h",
+                        yanchor="bottom",
+                        y=1.02,
+                        xanchor="right",
+                        x=1
+                    )
+                )
+                st.plotly_chart(fig_oos, use_container_width=True, config=chart_config)
+
+                # Show OOS Sharpe comparison
+                oos_sharpe = wf['oos_sharpe']
+                if oos_bm_nav is not None and len(oos_bm_nav) > 1:
+                    bm_daily_ret = oos_bm_nav.pct_change().dropna()
+                    if len(bm_daily_ret) > 0 and bm_daily_ret.std() > 0:
+                        oos_bm_sharpe = bm_daily_ret.mean() / bm_daily_ret.std() * np.sqrt(252)
+                        excess = oos_sharpe - oos_bm_sharpe
+                        st.caption(f"OOS Sharpe: Strategy **{oos_sharpe:.2f}** vs BM **{oos_bm_sharpe:.2f}** (Excess: {excess:+.2f})")
 
 else:
     # Initial state - show instructions
@@ -693,7 +1024,7 @@ else:
 
     ### Parameter Optimization
     Find optimal parameter combinations:
-    - **Full Grid**: Tests all combinations (14,520 total)
+    - **Full Grid**: Tests all combinations (2,016 total)
     - **Random Grid**: Random sampling (default 500, faster)
 
     ---
