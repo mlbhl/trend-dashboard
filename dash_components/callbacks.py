@@ -686,7 +686,6 @@ def register_callbacks(app):
         State("opt-seed-input", "value"),
         background=True,
         running=[
-            (Output("optimize-btn", "disabled"), True, False),
             (Output("optimize-progress-div", "children"), dbc.Progress(value=0, striped=True, animated=True), ""),
         ],
         progress=[Output("optimize-progress-div", "children")],
@@ -826,7 +825,6 @@ def register_callbacks(app):
         State("bm-ticker-input", "value"),
         background=True,
         running=[
-            (Output("walk-forward-btn", "disabled"), True, False),
             (Output("wf-progress-div", "children"), dbc.Progress(value=0, striped=True, animated=True), ""),
         ],
         progress=[Output("wf-progress-div", "children")],
