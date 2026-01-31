@@ -99,27 +99,36 @@ def register_callbacks(app):
 
     @app.callback(
         Output("opt-samples-warning", "children"),
+        Output("optimize-btn", "disabled"),
         Input("opt-samples-input", "value"),
+        Input("opt-mode-radio", "value"),
     )
-    def show_opt_samples_warning(samples):
-        """Show warning if optimization samples is too low."""
+    def validate_opt_samples(samples, opt_mode):
+        """Validate optimization samples and disable button if invalid."""
+        # Full grid mode doesn't need samples validation
+        if opt_mode == "full":
+            return None, False
+
         if samples is None:
-            return None
+            return None, False
+
         if samples < 100:
             return dbc.Alert(
                 "⚠️ Samples < 100 is too low. Minimum 100 required.",
                 color="danger",
                 className="py-1 px-2 mb-0",
                 style={"fontSize": "0.75rem"},
-            )
+            ), True
+
         if samples < 200:
             return dbc.Alert(
                 "⚠️ Samples < 200 may produce unreliable results.",
                 color="warning",
                 className="py-1 px-2 mb-0",
                 style={"fontSize": "0.75rem"},
-            )
-        return None
+            ), False
+
+        return None, False
 
     @app.callback(
         Output("wf-samples-warning", "children"),
@@ -147,27 +156,37 @@ def register_callbacks(app):
 
     @app.callback(
         Output("wf-train-warning", "children"),
+        Output("walk-forward-btn", "disabled"),
         Input("wf-train-input", "value"),
+        Input("wf-samples-input", "value"),
     )
-    def show_wf_train_warning(train_months):
-        """Show warning if train period is invalid."""
-        if train_months is None:
-            return None
-        if train_months < 12:
-            return dbc.Alert(
+    def validate_wf_inputs(train_months, samples):
+        """Validate walk-forward inputs and disable button if invalid."""
+        warning = None
+        disabled = False
+
+        # Validate train period
+        if train_months is not None and train_months < 12:
+            warning = dbc.Alert(
                 "⚠️ Train period must be at least 12 months.",
                 color="danger",
                 className="py-1 px-2 mb-0",
                 style={"fontSize": "0.75rem"},
             )
-        if train_months > 60:
-            return dbc.Alert(
+            disabled = True
+        elif train_months is not None and train_months > 60:
+            warning = dbc.Alert(
                 "⚠️ Train > 60 months may leave insufficient test data.",
                 color="warning",
                 className="py-1 px-2 mb-0",
                 style={"fontSize": "0.75rem"},
             )
-        return None
+
+        # Validate samples (only block, don't override warning)
+        if samples is not None and samples < 100:
+            disabled = True
+
+        return warning, disabled
 
     @app.callback(
         Output("wf-settings-collapse", "is_open"),
