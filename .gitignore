@@ -29,3 +29,6 @@ Thumbs.db
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Dash cache
+cache/
