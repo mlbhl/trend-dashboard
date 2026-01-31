@@ -131,43 +131,21 @@ def register_callbacks(app):
         return None, False
 
     @app.callback(
-        Output("wf-samples-warning", "children"),
-        Input("wf-samples-input", "value"),
-    )
-    def show_wf_samples_warning(samples):
-        """Show warning if walk-forward samples is too low."""
-        if samples is None:
-            return None
-        if samples < 100:
-            return dbc.Alert(
-                "⚠️ Samples < 100 is too low. Minimum 100 required.",
-                color="danger",
-                className="py-1 px-2 mb-0",
-                style={"fontSize": "0.75rem"},
-            )
-        if samples < 200:
-            return dbc.Alert(
-                "⚠️ Samples < 200 may produce unreliable results.",
-                color="warning",
-                className="py-1 px-2 mb-0",
-                style={"fontSize": "0.75rem"},
-            )
-        return None
-
-    @app.callback(
         Output("wf-train-warning", "children"),
+        Output("wf-samples-warning", "children"),
         Output("walk-forward-btn", "disabled"),
         Input("wf-train-input", "value"),
         Input("wf-samples-input", "value"),
     )
     def validate_wf_inputs(train_months, samples):
         """Validate walk-forward inputs and disable button if invalid."""
-        warning = None
+        train_warning = None
+        samples_warning = None
         disabled = False
 
         # Validate train period
         if train_months is not None and train_months < 12:
-            warning = dbc.Alert(
+            train_warning = dbc.Alert(
                 "⚠️ Train period must be at least 12 months.",
                 color="danger",
                 className="py-1 px-2 mb-0",
@@ -175,18 +153,31 @@ def register_callbacks(app):
             )
             disabled = True
         elif train_months is not None and train_months > 60:
-            warning = dbc.Alert(
+            train_warning = dbc.Alert(
                 "⚠️ Train > 60 months may leave insufficient test data.",
                 color="warning",
                 className="py-1 px-2 mb-0",
                 style={"fontSize": "0.75rem"},
             )
 
-        # Validate samples (only block, don't override warning)
+        # Validate samples
         if samples is not None and samples < 100:
+            samples_warning = dbc.Alert(
+                "⚠️ Samples < 100 is too low. Minimum 100 required.",
+                color="danger",
+                className="py-1 px-2 mb-0",
+                style={"fontSize": "0.75rem"},
+            )
             disabled = True
+        elif samples is not None and samples < 200:
+            samples_warning = dbc.Alert(
+                "⚠️ Samples < 200 may produce unreliable results.",
+                color="warning",
+                className="py-1 px-2 mb-0",
+                style={"fontSize": "0.75rem"},
+            )
 
-        return warning, disabled
+        return train_warning, samples_warning, disabled
 
     @app.callback(
         Output("wf-settings-collapse", "is_open"),
