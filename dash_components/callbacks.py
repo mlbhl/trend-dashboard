@@ -150,9 +150,16 @@ def register_callbacks(app):
         Input("wf-train-input", "value"),
     )
     def show_wf_train_warning(train_months):
-        """Show warning if train period is too long."""
+        """Show warning if train period is invalid."""
         if train_months is None:
             return None
+        if train_months < 12:
+            return dbc.Alert(
+                "⚠️ Train period must be at least 12 months.",
+                color="danger",
+                className="py-1 px-2 mb-0",
+                style={"fontSize": "0.75rem"},
+            )
         if train_months > 60:
             return dbc.Alert(
                 "⚠️ Train > 60 months may leave insufficient test data.",
@@ -828,6 +835,11 @@ def register_callbacks(app):
         """Run walk-forward optimization."""
         if not n_clicks or not selected_tickers or len(selected_tickers) < 2:
             raise PreventUpdate
+
+        # Validate train period
+        train_months = int(train_months) if train_months else 36
+        if train_months < 12:
+            return None, dbc.Alert("Train period must be at least 12 months.", color="danger"), ""
 
         # Validate samples
         wf_samples = int(wf_samples) if wf_samples else 500

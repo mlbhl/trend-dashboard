@@ -542,7 +542,7 @@ def create_sidebar():
                         id="wf-train-input",
                         type="number",
                         value=36,
-                        min=12,
+                        min=1,
                         step=12,
                         size="sm",
                         className="mb-1",

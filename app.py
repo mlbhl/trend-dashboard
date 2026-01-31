@@ -393,11 +393,13 @@ with st.sidebar.expander("Walk-Forward Settings"):
         help="Rolling: Fixed train window. Expanding: Train from start, grows each fold."
     )
     if wf_window_type == "Rolling":
-        wf_train = st.number_input("Train Period (months)", min_value=12, value=36, step=12)
+        wf_train = st.number_input("Train Period (months)", min_value=1, value=36, step=12)
     else:
-        wf_train = st.number_input("Min Train Period (months)", min_value=12, value=36, step=12,
+        wf_train = st.number_input("Min Train Period (months)", min_value=1, value=36, step=12,
                                    help="Minimum training period for the first fold")
-    if wf_train > 60:
+    if wf_train < 12:
+        st.error("⚠️ Train period must be at least 12 months.")
+    elif wf_train > 60:
         st.warning("⚠️ Train period > 60 months may leave insufficient data for testing.")
     wf_test = st.number_input("Test Period (months)", min_value=1, value=12, step=1)
     wf_step = st.number_input("Step Size (months)", min_value=1, value=12, step=1)
@@ -412,6 +414,8 @@ with st.sidebar.expander("Walk-Forward Settings"):
 if st.sidebar.button("🔄 Walk-Forward Optimize"):
     if len(selected_tickers) < 2:
         st.sidebar.error("Select at least 2 tickers first.")
+    elif wf_train < 12:
+        st.sidebar.error("Train period must be at least 12 months.")
     elif wf_samples < 100:
         st.sidebar.error("Samples must be at least 100.")
     else:
