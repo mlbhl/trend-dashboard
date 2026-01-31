@@ -302,8 +302,10 @@ if opt_mode == "Random Grid":
         try:
             n_samples = int(n_samples_input)
             if n_samples < 100:
-                st.sidebar.warning("⚠️ Samples < 100 may produce unreliable results.")
-            n_samples = max(100, min(2016, n_samples))
+                st.sidebar.error("⚠️ Samples must be at least 100.")
+            elif n_samples < 200:
+                st.sidebar.warning("⚠️ Samples < 200 may produce unreliable results.")
+            n_samples = min(2016, n_samples)  # Cap at max only
         except ValueError:
             n_samples = 500
     with col_seed:
@@ -316,6 +318,8 @@ else:
 if st.sidebar.button("🔍 Optimize Parameters"):
     if len(selected_tickers) < 2:
         st.sidebar.error("Select at least 2 tickers first.")
+    elif opt_mode == "Random Grid" and n_samples < 100:
+        st.sidebar.error("Samples must be at least 100.")
     else:
         # Mark as running (will be checked on next page load if stopped)
         st.session_state['opt_running'] = True
@@ -397,8 +401,10 @@ with st.sidebar.expander("Walk-Forward Settings"):
         st.warning("⚠️ Train period > 60 months may leave insufficient data for testing.")
     wf_test = st.number_input("Test Period (months)", min_value=1, value=12, step=1)
     wf_step = st.number_input("Step Size (months)", min_value=1, value=12, step=1)
-    wf_samples = st.number_input("Samples per Fold", min_value=100, max_value=5000, value=500, step=100)
-    if wf_samples < 200:
+    wf_samples = st.number_input("Samples per Fold", min_value=1, max_value=5000, value=500, step=100)
+    if wf_samples < 100:
+        st.error("⚠️ Samples must be at least 100.")
+    elif wf_samples < 200:
         st.warning("⚠️ Samples < 200 may produce unreliable optimization results.")
     wf_seed_input = st.text_input("Seed", value="", help="Random seed for reproducibility (leave empty for random)", key="wf_seed")
     wf_seed = int(wf_seed_input) if wf_seed_input.strip().isdigit() else None
@@ -406,6 +412,8 @@ with st.sidebar.expander("Walk-Forward Settings"):
 if st.sidebar.button("🔄 Walk-Forward Optimize"):
     if len(selected_tickers) < 2:
         st.sidebar.error("Select at least 2 tickers first.")
+    elif wf_samples < 100:
+        st.sidebar.error("Samples must be at least 100.")
     else:
         # Mark as running (will be checked on next page load if stopped)
         st.session_state['wf_running'] = True
