@@ -301,6 +301,8 @@ if opt_mode == "Random Grid":
         n_samples_input = st.text_input("Samples", value="500")
         try:
             n_samples = int(n_samples_input)
+            if n_samples < 100:
+                st.sidebar.warning("⚠️ Samples < 100 may produce unreliable results.")
             n_samples = max(100, min(2016, n_samples))
         except ValueError:
             n_samples = 500
@@ -391,9 +393,13 @@ with st.sidebar.expander("Walk-Forward Settings"):
     else:
         wf_train = st.number_input("Min Train Period (months)", min_value=12, value=36, step=12,
                                    help="Minimum training period for the first fold")
+    if wf_train > 60:
+        st.warning("⚠️ Train period > 60 months may leave insufficient data for testing.")
     wf_test = st.number_input("Test Period (months)", min_value=1, value=12, step=1)
     wf_step = st.number_input("Step Size (months)", min_value=1, value=12, step=1)
     wf_samples = st.number_input("Samples per Fold", min_value=100, max_value=5000, value=500, step=100)
+    if wf_samples < 200:
+        st.warning("⚠️ Samples < 200 may produce unreliable optimization results.")
     wf_seed_input = st.text_input("Seed", value="", help="Random seed for reproducibility (leave empty for random)", key="wf_seed")
     wf_seed = int(wf_seed_input) if wf_seed_input.strip().isdigit() else None
 

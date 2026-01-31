@@ -98,6 +98,51 @@ def register_callbacks(app):
         return {"display": "none"}
 
     @app.callback(
+        Output("opt-samples-warning", "children"),
+        Input("opt-samples-input", "value"),
+    )
+    def show_opt_samples_warning(samples):
+        """Show warning if optimization samples is too low."""
+        if samples and samples < 200:
+            return dbc.Alert(
+                "⚠️ Samples < 200 may produce unreliable results.",
+                color="warning",
+                className="py-1 px-2 mb-0",
+                style={"fontSize": "0.75rem"},
+            )
+        return None
+
+    @app.callback(
+        Output("wf-samples-warning", "children"),
+        Input("wf-samples-input", "value"),
+    )
+    def show_wf_samples_warning(samples):
+        """Show warning if walk-forward samples is too low."""
+        if samples and samples < 200:
+            return dbc.Alert(
+                "⚠️ Samples < 200 may produce unreliable results.",
+                color="warning",
+                className="py-1 px-2 mb-0",
+                style={"fontSize": "0.75rem"},
+            )
+        return None
+
+    @app.callback(
+        Output("wf-train-warning", "children"),
+        Input("wf-train-input", "value"),
+    )
+    def show_wf_train_warning(train_months):
+        """Show warning if train period is too long."""
+        if train_months and train_months > 60:
+            return dbc.Alert(
+                "⚠️ Train > 60 months may leave insufficient test data.",
+                color="warning",
+                className="py-1 px-2 mb-0",
+                style={"fontSize": "0.75rem"},
+            )
+        return None
+
+    @app.callback(
         Output("wf-settings-collapse", "is_open"),
         Input("wf-settings-collapse-btn", "n_clicks"),
         State("wf-settings-collapse", "is_open"),
