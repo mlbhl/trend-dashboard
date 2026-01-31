@@ -103,7 +103,16 @@ def register_callbacks(app):
     )
     def show_opt_samples_warning(samples):
         """Show warning if optimization samples is too low."""
-        if samples and samples < 200:
+        if samples is None:
+            return None
+        if samples < 100:
+            return dbc.Alert(
+                "⚠️ Samples < 100 is too low. Minimum 100 required.",
+                color="danger",
+                className="py-1 px-2 mb-0",
+                style={"fontSize": "0.75rem"},
+            )
+        if samples < 200:
             return dbc.Alert(
                 "⚠️ Samples < 200 may produce unreliable results.",
                 color="warning",
@@ -118,7 +127,16 @@ def register_callbacks(app):
     )
     def show_wf_samples_warning(samples):
         """Show warning if walk-forward samples is too low."""
-        if samples and samples < 200:
+        if samples is None:
+            return None
+        if samples < 100:
+            return dbc.Alert(
+                "⚠️ Samples < 100 is too low. Minimum 100 required.",
+                color="danger",
+                className="py-1 px-2 mb-0",
+                style={"fontSize": "0.75rem"},
+            )
+        if samples < 200:
             return dbc.Alert(
                 "⚠️ Samples < 200 may produce unreliable results.",
                 color="warning",
@@ -133,7 +151,9 @@ def register_callbacks(app):
     )
     def show_wf_train_warning(train_months):
         """Show warning if train period is too long."""
-        if train_months and train_months > 60:
+        if train_months is None:
+            return None
+        if train_months > 60:
             return dbc.Alert(
                 "⚠️ Train > 60 months may leave insufficient test data.",
                 color="warning",
@@ -665,6 +685,14 @@ def register_callbacks(app):
         if not n_clicks or not selected_tickers or len(selected_tickers) < 2:
             raise PreventUpdate
 
+        # Validate samples
+        if opt_mode == "random" and n_samples:
+            n_samples = int(n_samples)
+            if n_samples < 100:
+                return None, dbc.Alert("Samples must be at least 100.", color="danger"), ""
+        else:
+            n_samples = None
+
         # Load data
         dataset, _ = load_price_data(selected_tickers, start_date=start_date)
 
@@ -672,7 +700,6 @@ def register_callbacks(app):
         if select_all:
             top_k = None
         tcost = float(tcost) if tcost else 0.0
-        n_samples = int(n_samples) if opt_mode == "random" and n_samples else None
         # Parse seed from text input
         try:
             opt_seed = int(opt_seed) if opt_seed and str(opt_seed).strip().isdigit() else None
@@ -802,6 +829,11 @@ def register_callbacks(app):
         if not n_clicks or not selected_tickers or len(selected_tickers) < 2:
             raise PreventUpdate
 
+        # Validate samples
+        wf_samples = int(wf_samples) if wf_samples else 500
+        if wf_samples < 100:
+            return None, dbc.Alert("Samples must be at least 100.", color="danger"), ""
+
         # Load data
         dataset, _ = load_price_data(selected_tickers, start_date=start_date)
 
@@ -819,7 +851,6 @@ def register_callbacks(app):
         if select_all:
             top_k = None
         tcost = float(tcost) if tcost else 0.0
-        wf_samples = int(wf_samples) if wf_samples else 500
         # Parse seed from text input
         try:
             wf_seed = int(wf_seed) if wf_seed and str(wf_seed).strip().isdigit() else None
