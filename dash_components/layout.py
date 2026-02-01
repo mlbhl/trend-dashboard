@@ -105,11 +105,11 @@ def create_sidebar():
             label_with_help("Min Valid Tickers", "help-thresh", "Minimum number of valid tickers required to run the analysis"),
             dcc.Slider(
                 id="thresh-slider",
-                min=1,
+                min=2,
                 max=20,
                 step=1,
                 value=DEFAULT_THRESH,
-                marks={i: str(i) for i in range(1, 21, 5)},
+                marks={i: str(i) for i in [2, 5, 10, 15, 20]},
                 tooltip={"placement": "bottom", "always_visible": False},
                 className="mb-3",
             ),
