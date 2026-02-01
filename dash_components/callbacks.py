@@ -39,13 +39,13 @@ def register_callbacks(app):
     # =========================================================================
 
     @app.callback(
-        Output("mobile-sidebar", "is_open"),
+        Output("sidebar-collapse", "is_open"),
         Input("mobile-sidebar-toggle", "n_clicks"),
-        State("mobile-sidebar", "is_open"),
+        State("sidebar-collapse", "is_open"),
         prevent_initial_call=True,
     )
     def toggle_mobile_sidebar(n_clicks, is_open):
-        """Toggle mobile sidebar offcanvas."""
+        """Toggle mobile sidebar collapse."""
         if n_clicks:
             return not is_open
         return is_open

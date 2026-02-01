@@ -1,0 +1,20 @@
+/* Responsive sidebar styles */
+
+/* On desktop (lg and up), always show sidebar content */
+@media (min-width: 992px) {
+    .sidebar-collapse {
+        display: block !important;
+    }
+
+    .sidebar-collapse.collapse:not(.show) {
+        display: block !important;
+    }
+}
+
+/* On mobile, start collapsed */
+@media (max-width: 991.98px) {
+    .sidebar {
+        position: relative !important;
+        max-height: none !important;
+    }
+}

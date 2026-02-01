@@ -601,50 +601,34 @@ def create_sidebar_content():
 
 
 def create_sidebar():
-    """Create the desktop sidebar (hidden on mobile)."""
+    """Create the sidebar with responsive behavior."""
     return dbc.Col(
-        create_sidebar_content(),
-        width=3,
-        className="sidebar bg-light p-3 d-none d-lg-block",
+        [
+            # Mobile toggle button (shown only on mobile)
+            dbc.Button(
+                [html.I(className="fas fa-bars me-2"), "Settings"],
+                id="mobile-sidebar-toggle",
+                color="secondary",
+                outline=True,
+                className="d-lg-none w-100 mb-3",
+            ),
+            # Sidebar content wrapper (collapsible on mobile)
+            dbc.Collapse(
+                id="sidebar-collapse",
+                is_open=True,  # Always open by default (CSS handles desktop)
+                className="sidebar-collapse",
+                children=create_sidebar_content(),
+            ),
+        ],
+        lg=3,
+        xs=12,
+        className="sidebar bg-light p-3",
         style={
-            "height": "100vh",
             "overflowY": "auto",
             "position": "sticky",
             "top": 0,
+            "maxHeight": "100vh",
         },
-    )
-
-
-def create_mobile_navbar():
-    """Create the mobile navbar with toggle button."""
-    return dbc.Navbar(
-        dbc.Container(
-            [
-                dbc.NavbarBrand("Trend Dashboard", className="ms-2"),
-                dbc.Button(
-                    html.I(className="fas fa-bars"),
-                    id="mobile-sidebar-toggle",
-                    color="primary",
-                    className="ms-auto",
-                ),
-            ],
-            fluid=True,
-        ),
-        color="light",
-        className="d-lg-none mb-2",
-        sticky="top",
-    )
-
-
-def create_mobile_offcanvas():
-    """Create the mobile offcanvas sidebar."""
-    return dbc.Offcanvas(
-        create_sidebar_content(),
-        id="mobile-sidebar",
-        title="Parameters",
-        is_open=False,
-        placement="start",
-        style={"width": "85%", "maxWidth": "400px"},
     )
 
 
@@ -1094,10 +1078,6 @@ def create_layout():
             dcc.Store(id="weights-store"),
             dcc.Store(id="walk-forward-store"),
             dcc.Store(id="optimized-params-store"),
-
-            # Mobile navbar and offcanvas
-            create_mobile_navbar(),
-            create_mobile_offcanvas(),
 
             # Main layout
             dbc.Row(
