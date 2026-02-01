@@ -81,8 +81,11 @@ def create_sidebar():
                 options=[{"label": t, "value": t} for t in ALPHA_LIST],
                 value=ALPHA_LIST.copy(),
                 multi=True,
-                placeholder="Select tickers...",
+                placeholder="Enter tickers...",
                 className="mb-2",
+                searchable=False,
+                clearable=False,
+                style={"cursor": "default"},
             ),
             label_with_help("Add Custom Ticker", "help-add-ticker", "Enter ticker symbol and press Enter to add"),
             dbc.InputGroup(

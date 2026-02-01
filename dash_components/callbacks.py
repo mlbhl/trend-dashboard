@@ -230,14 +230,16 @@ def register_callbacks(app):
     @app.callback(
         Output("ticker-select", "options"),
         Output("ticker-select", "value"),
+        Output("new-ticker-input", "value"),
         Input("add-ticker-btn", "n_clicks"),
+        Input("new-ticker-input", "n_submit"),
         Input("reset-tickers-btn", "n_clicks"),
         State("new-ticker-input", "value"),
         State("ticker-select", "options"),
         State("ticker-select", "value"),
         prevent_initial_call=True,
     )
-    def manage_tickers(add_clicks, reset_clicks, new_ticker, current_options, current_value):
+    def manage_tickers(add_clicks, n_submit, reset_clicks, new_ticker, current_options, current_value):
         """Add new ticker or reset to defaults."""
         from dash import ctx
 
@@ -245,16 +247,16 @@ def register_callbacks(app):
 
         if triggered_id == "reset-tickers-btn":
             default_options = [{"label": t, "value": t} for t in ALPHA_LIST]
-            return default_options, ALPHA_LIST.copy()
+            return default_options, ALPHA_LIST.copy(), ""
 
-        if triggered_id == "add-ticker-btn" and new_ticker:
+        if triggered_id in ("add-ticker-btn", "new-ticker-input") and new_ticker:
             new_ticker = new_ticker.strip().upper()
             existing_values = [opt["value"] for opt in current_options]
 
             if new_ticker and new_ticker not in existing_values:
                 new_options = current_options + [{"label": new_ticker, "value": new_ticker}]
                 new_value = current_value + [new_ticker] if current_value else [new_ticker]
-                return new_options, new_value
+                return new_options, new_value, ""
 
         raise PreventUpdate
 

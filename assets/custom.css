@@ -1,0 +1,9 @@
+/* Hide dropdown menu for ticker-select - only show tags */
+#ticker-select .Select-menu-outer {
+    display: none !important;
+}
+
+/* Alternative selector for newer Dash versions */
+#ticker-select [class*="menu"] {
+    display: none !important;
+}
