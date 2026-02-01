@@ -39,6 +39,18 @@ def register_callbacks(app):
     # =========================================================================
 
     @app.callback(
+        Output("mobile-sidebar", "is_open"),
+        Input("mobile-sidebar-toggle", "n_clicks"),
+        State("mobile-sidebar", "is_open"),
+        prevent_initial_call=True,
+    )
+    def toggle_mobile_sidebar(n_clicks, is_open):
+        """Toggle mobile sidebar offcanvas."""
+        if n_clicks:
+            return not is_open
+        return is_open
+
+    @app.callback(
         Output("custom-weight-div", "style"),
         Input("weight-mode-radio", "value"),
     )
