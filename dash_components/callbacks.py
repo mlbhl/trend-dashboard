@@ -303,6 +303,7 @@ def register_callbacks(app):
         Output("weights-store", "data"),
         Output("initial-instructions", "style"),
         Output("analysis-results", "style"),
+        Output("analysis-loading", "style"),
         Input("run-analysis-btn", "n_clicks"),
         State("start-date", "date"),
         State("backtest-start-date", "date"),
@@ -324,6 +325,12 @@ def register_callbacks(app):
         State("bm-type-radio", "value"),
         State("bm-ticker-input", "value"),
         prevent_initial_call=True,
+        background=True,
+        running=[
+            (Output("run-analysis-btn", "disabled"), True, False),
+            (Output("run-analysis-btn", "children"), [dbc.Spinner(size="sm", spinner_class_name="me-2"), "Running..."], [html.I(className="fas fa-play me-2"), "Run Analysis"]),
+            (Output("analysis-loading", "style"), {"display": "block"}, {"display": "none"}),
+        ],
     )
     def run_analysis(
         n_clicks,
@@ -477,6 +484,7 @@ def register_callbacks(app):
             weights_data,
             {"display": "none"},  # Hide instructions
             {"display": "block"},  # Show results
+            {"display": "none"},  # Hide loading
         )
 
     # =========================================================================

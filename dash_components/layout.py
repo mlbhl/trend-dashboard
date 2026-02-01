@@ -371,12 +371,17 @@ def create_sidebar():
             html.Hr(),
 
             # Run Analysis Button
-            dbc.Button(
-                [html.I(className="fas fa-play me-2"), "Run Analysis"],
-                id="run-analysis-btn",
-                color="primary",
-                className="w-100 mb-3",
-                size="lg",
+            html.Div(
+                id="run-analysis-btn-container",
+                children=[
+                    dbc.Button(
+                        [html.I(className="fas fa-play me-2", id="run-btn-icon"), "Run Analysis"],
+                        id="run-analysis-btn",
+                        color="primary",
+                        className="w-100 mb-3",
+                        size="lg",
+                    ),
+                ],
             ),
 
             # Optimization Section (Collapsible)
@@ -627,6 +632,22 @@ def create_main_content():
     return dbc.Col(
         [
             html.H2("Momentum Strategy Dashboard", className="mb-4"),
+
+            # Loading indicator (shown while analysis is running)
+            html.Div(
+                id="analysis-loading",
+                style={"display": "none"},
+                children=[
+                    dbc.Alert(
+                        [
+                            dbc.Spinner(size="sm", color="primary", spinner_class_name="me-2"),
+                            "Running analysis... Please wait.",
+                        ],
+                        color="warning",
+                        className="mb-4",
+                    ),
+                ],
+            ),
 
             # Initial instructions (shown when no data)
             html.Div(
