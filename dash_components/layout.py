@@ -606,16 +606,15 @@ def create_sidebar():
         [
             # Mobile toggle button (shown only on mobile)
             dbc.Button(
-                [html.I(className="fas fa-bars me-2"), "Settings"],
+                [html.I(className="fas fa-cog me-2"), "Settings"],
                 id="mobile-sidebar-toggle",
-                color="secondary",
-                outline=True,
+                color="primary",
                 className="d-lg-none w-100 mb-3",
             ),
-            # Sidebar content wrapper (collapsible on mobile)
+            # Sidebar content wrapper (collapsible on mobile, always open on desktop via CSS)
             dbc.Collapse(
                 id="sidebar-collapse",
-                is_open=True,  # Always open by default (CSS handles desktop)
+                is_open=False,  # Collapsed on mobile by default
                 className="sidebar-collapse",
                 children=create_sidebar_content(),
             ),
@@ -623,12 +622,6 @@ def create_sidebar():
         lg=3,
         xs=12,
         className="sidebar bg-light p-3",
-        style={
-            "overflowY": "auto",
-            "position": "sticky",
-            "top": 0,
-            "maxHeight": "100vh",
-        },
     )
 
 
@@ -1059,9 +1052,9 @@ def create_main_content():
                 ],
             ),
         ],
-        width=9,
-        className="main-content p-4",
-        style={"height": "100vh", "overflowY": "auto"},
+        lg=9,
+        xs=12,
+        className="main-content p-3 p-lg-4",
     )
 
 

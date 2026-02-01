@@ -1,6 +1,6 @@
-/* Responsive sidebar styles */
+/* Responsive layout styles */
 
-/* On desktop (lg and up), always show sidebar content */
+/* Desktop (lg and up): Always show sidebar content, fixed sidebar */
 @media (min-width: 992px) {
     .sidebar-collapse {
         display: block !important;
@@ -9,12 +9,45 @@
     .sidebar-collapse.collapse:not(.show) {
         display: block !important;
     }
+
+    .sidebar {
+        height: 100vh;
+        overflow-y: auto;
+        position: sticky !important;
+        top: 0;
+    }
+
+    .main-content {
+        height: 100vh;
+        overflow-y: auto;
+    }
 }
 
-/* On mobile, start collapsed */
+/* Mobile (below lg): Collapsible sidebar, scrollable content */
 @media (max-width: 991.98px) {
     .sidebar {
-        position: relative !important;
-        max-height: none !important;
+        position: relative;
+        height: auto;
+        border-bottom: 1px solid #dee2e6;
+    }
+
+    .main-content {
+        height: auto;
+        min-height: 100vh;
+    }
+
+    /* Make charts responsive */
+    .js-plotly-plot {
+        width: 100% !important;
+    }
+
+    /* Improve touch targets */
+    .btn {
+        min-height: 44px;
+    }
+
+    /* Better spacing for mobile */
+    .card {
+        margin-bottom: 1rem;
     }
 }
