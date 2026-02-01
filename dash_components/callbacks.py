@@ -275,11 +275,18 @@ def register_callbacks(app):
         if triggered == "reset-tickers-btn":
             return ALPHA_LIST.copy(), ""
 
-        # Remove ticker
+        # Remove ticker - only if actually clicked (n_clicks > 0)
         if isinstance(triggered, dict) and triggered.get("type") == "remove-ticker":
-            ticker_to_remove = triggered["index"]
-            new_tickers = [t for t in current_tickers if t != ticker_to_remove]
-            return new_tickers, dash.no_update
+            # Find the index of this trigger in the pattern matching list
+            # and check if it was actually clicked
+            trigger_index = triggered["index"]
+            for i, ticker in enumerate(current_tickers):
+                if ticker == trigger_index:
+                    if remove_clicks and i < len(remove_clicks) and remove_clicks[i]:
+                        new_tickers = [t for t in current_tickers if t != trigger_index]
+                        return new_tickers, dash.no_update
+                    break
+            raise PreventUpdate
 
         # Add ticker
         if triggered in ("add-ticker-btn", "new-ticker-input") and new_ticker:
