@@ -4,15 +4,21 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Trend Dashboard is a Python Streamlit application for analyzing momentum-based rotation strategies across ETFs. It downloads price data from Yahoo Finance, generates momentum signals, runs backtests, and displays interactive visualizations.
+Trend Dashboard is a Python Dash application for analyzing momentum-based rotation strategies across ETFs. It downloads price data from Yahoo Finance, generates momentum signals, runs backtests, and displays interactive visualizations.
 
 ## Running the Application
 
+**Dash (Production):**
 ```bash
-streamlit run app.py
+gunicorn app:server
 ```
+Runs on port 8000 by default.
 
-The app runs on port 8501 by default.
+**Streamlit (Legacy):**
+```bash
+streamlit run streamlit_app.py
+```
+Runs on port 8501 by default.
 
 ## Architecture
 
@@ -30,18 +36,25 @@ Price Data (Yahoo Finance) → Signal Generation → Portfolio Weights → Backt
 - `charts.py` - Plotly visualizations: NAV, drawdown, allocation, heatmap, signal tables
 - `optimizer.py` - `optimize_sharpe()` grid search for optimal lookback windows and weights
 
-**Main Entry Point:**
-- `app.py` - Streamlit UI with sidebar controls, session state management, and analysis orchestration
+**Dash Components (`dash_components/`):**
+- `layout.py` - UI layout with sidebar controls and main content tabs
+- `callbacks.py` - All Dash callbacks for interactivity and data processing
+
+**Entry Points:**
+- `app.py` - Dash app (main), uses gunicorn for production
+- `streamlit_app.py` - Streamlit app (legacy)
 
 ## Key Patterns
 
-**Adding a new signal type:** Create function in `signals.py` returning a DataFrame of rankings, then integrate in `app.py`
+**Adding a new signal type:** Create function in `signals.py` returning a DataFrame of rankings, then integrate in callbacks
 
-**Adding a new chart:** Create function in `charts.py` using Plotly, return a `go.Figure`, call from `app.py`
+**Adding a new chart:** Create function in `charts.py` using Plotly, return a `go.Figure`, call from callbacks
 
-**Adding new metrics:** Add calculation to `metrics.py`, reference in `app.py` display sections
+**Adding new metrics:** Add calculation to `metrics.py`, reference in callbacks
 
 **Adding a strategy variant:** Implement weight computation in `portfolio.py` following `compute_weight_top_k()` pattern
+
+**Adding Dash callbacks:** Add to `dash_components/callbacks.py` within `register_callbacks()` function
 
 ## Code Style
 
