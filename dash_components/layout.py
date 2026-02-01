@@ -351,7 +351,7 @@ def create_sidebar():
                                 id="bm-ticker-input",
                                 placeholder="e.g., SPY",
                                 type="text",
-                                value="SPY",
+                                #value="SPY",
                                 debounce=True,  # Triggers on Enter
                             ),
                             dbc.Button(
@@ -648,6 +648,9 @@ def create_main_content():
                     ),
                 ],
             ),
+
+            # Warning/Error messages
+            html.Div(id="analysis-warnings", className="mb-3"),
 
             # Initial instructions (shown when no data)
             html.Div(

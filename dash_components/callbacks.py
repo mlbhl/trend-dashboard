@@ -304,6 +304,7 @@ def register_callbacks(app):
         Output("initial-instructions", "style"),
         Output("analysis-results", "style"),
         Output("analysis-loading", "style"),
+        Output("analysis-warnings", "children"),
         Input("run-analysis-btn", "n_clicks"),
         State("start-date", "date"),
         State("backtest-start-date", "date"),
@@ -376,8 +377,33 @@ def register_callbacks(app):
         # Load data
         dataset, missing = load_price_data(selected_tickers, start_date=start_date)
 
+        # Check if we have enough valid tickers
+        if len(dataset.columns) < 2:
+            error_msg = "Not enough valid tickers. Need at least 2 tickers with data."
+            if missing:
+                error_msg += f" Missing: {', '.join(missing)}"
+            return (
+                None, None, None, None, None, None,
+                {"display": "block"},  # Show instructions
+                {"display": "none"},  # Hide results
+                {"display": "none"},  # Hide loading
+                dbc.Alert([html.I(className="fas fa-times-circle me-2"), error_msg], color="danger"),
+            )
+
+        # Collect warnings
+        warnings = []
+        if missing:
+            warnings.append(
+                dbc.Alert(
+                    [html.I(className="fas fa-exclamation-triangle me-2"), f"Data not found for: {', '.join(missing)}"],
+                    color="warning",
+                    dismissable=True,
+                )
+            )
+
         # Load benchmark data if custom
         bm_data = None
+        bm_missing = False
         custom_bm_ticker = None
         if bm_type == "custom" and bm_ticker:
             custom_bm_ticker = bm_ticker.strip().upper()
@@ -385,6 +411,15 @@ def register_callbacks(app):
                 bm_dataset, _ = load_price_data([custom_bm_ticker], start_date=start_date)
                 if custom_bm_ticker in bm_dataset.columns:
                     bm_data = bm_dataset[custom_bm_ticker]
+                else:
+                    bm_missing = True
+                    warnings.append(
+                        dbc.Alert(
+                            [html.I(className="fas fa-exclamation-triangle me-2"), f"Benchmark ticker '{custom_bm_ticker}' not found. Using Equal Weight BM instead."],
+                            color="warning",
+                            dismissable=True,
+                        )
+                    )
 
         # Generate signal
         signal = generate_signal(
@@ -485,6 +520,7 @@ def register_callbacks(app):
             {"display": "none"},  # Hide instructions
             {"display": "block"},  # Show results
             {"display": "none"},  # Hide loading
+            warnings if warnings else "",  # Show warnings
         )
 
     # =========================================================================
