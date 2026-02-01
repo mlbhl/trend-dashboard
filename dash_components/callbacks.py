@@ -3,7 +3,8 @@
 import json
 import numpy as np
 import pandas as pd
-from dash import Input, Output, State, callback, html, no_update, dash_table
+import dash
+from dash import Input, Output, State, callback, html, no_update, dash_table, ALL
 from dash.exceptions import PreventUpdate
 import dash_bootstrap_components as dbc
 import plotly.graph_objects as go
@@ -228,35 +229,64 @@ def register_callbacks(app):
     # =========================================================================
 
     @app.callback(
-        Output("ticker-select", "options"),
-        Output("ticker-select", "value"),
+        Output("ticker-tags", "children"),
+        Input("ticker-store", "data"),
+    )
+    def render_ticker_tags(tickers):
+        """Render ticker tags from store."""
+        if not tickers:
+            return []
+        tags = []
+        for ticker in tickers:
+            tag = dbc.Badge(
+                [
+                    ticker,
+                    html.Span(
+                        "\u00d7",
+                        id={"type": "remove-ticker", "index": ticker},
+                        style={"cursor": "pointer", "marginLeft": "6px", "fontWeight": "bold"},
+                    ),
+                ],
+                color="primary",
+                className="me-1 mb-1",
+                style={"fontSize": "0.85rem", "padding": "5px 8px"},
+            )
+            tags.append(tag)
+        return tags
+
+    @app.callback(
+        Output("ticker-store", "data"),
         Output("new-ticker-input", "value"),
         Input("add-ticker-btn", "n_clicks"),
         Input("new-ticker-input", "n_submit"),
         Input("reset-tickers-btn", "n_clicks"),
+        Input({"type": "remove-ticker", "index": ALL}, "n_clicks"),
         State("new-ticker-input", "value"),
-        State("ticker-select", "options"),
-        State("ticker-select", "value"),
+        State("ticker-store", "data"),
         prevent_initial_call=True,
     )
-    def manage_tickers(add_clicks, n_submit, reset_clicks, new_ticker, current_options, current_value):
-        """Add new ticker or reset to defaults."""
+    def manage_tickers(add_clicks, n_submit, reset_clicks, remove_clicks, new_ticker, current_tickers):
+        """Add, remove, or reset tickers."""
         from dash import ctx
 
-        triggered_id = ctx.triggered_id
+        triggered = ctx.triggered_id
 
-        if triggered_id == "reset-tickers-btn":
-            default_options = [{"label": t, "value": t} for t in ALPHA_LIST]
-            return default_options, ALPHA_LIST.copy(), ""
+        # Reset to defaults
+        if triggered == "reset-tickers-btn":
+            return ALPHA_LIST.copy(), ""
 
-        if triggered_id in ("add-ticker-btn", "new-ticker-input") and new_ticker:
+        # Remove ticker
+        if isinstance(triggered, dict) and triggered.get("type") == "remove-ticker":
+            ticker_to_remove = triggered["index"]
+            new_tickers = [t for t in current_tickers if t != ticker_to_remove]
+            return new_tickers, dash.no_update
+
+        # Add ticker
+        if triggered in ("add-ticker-btn", "new-ticker-input") and new_ticker:
             new_ticker = new_ticker.strip().upper()
-            existing_values = [opt["value"] for opt in current_options]
-
-            if new_ticker and new_ticker not in existing_values:
-                new_options = current_options + [{"label": new_ticker, "value": new_ticker}]
-                new_value = current_value + [new_ticker] if current_value else [new_ticker]
-                return new_options, new_value, ""
+            if new_ticker and new_ticker not in current_tickers:
+                return current_tickers + [new_ticker], ""
+            return dash.no_update, ""
 
         raise PreventUpdate
 
@@ -276,7 +306,7 @@ def register_callbacks(app):
         Input("run-analysis-btn", "n_clicks"),
         State("start-date", "date"),
         State("backtest-start-date", "date"),
-        State("ticker-select", "value"),
+        State("ticker-store", "data"),
         State("thresh-slider", "value"),
         State("short-window-slider", "value"),
         State("mid-window-slider", "value"),
@@ -668,7 +698,7 @@ def register_callbacks(app):
         Input("optimize-btn", "n_clicks"),
         State("start-date", "date"),
         State("backtest-start-date", "date"),
-        State("ticker-select", "value"),
+        State("ticker-store", "data"),
         State("thresh-slider", "value"),
         State("select-all-tickers-checkbox", "value"),
         State("top-k-slider", "value"),
@@ -802,7 +832,7 @@ def register_callbacks(app):
         Output("wf-progress-div", "children", allow_duplicate=True),
         Input("walk-forward-btn", "n_clicks"),
         State("start-date", "date"),
-        State("ticker-select", "value"),
+        State("ticker-store", "data"),
         State("thresh-slider", "value"),
         State("select-all-tickers-checkbox", "value"),
         State("top-k-slider", "value"),

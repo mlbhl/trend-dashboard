@@ -75,19 +75,10 @@ def create_sidebar():
 
             # Ticker Selection Section
             html.H6("Ticker Selection", className="text-muted mb-2"),
-            label_with_help("Select Tickers", "help-tickers", "Select ETFs to include in the analysis"),
-            dcc.Dropdown(
-                id="ticker-select",
-                options=[{"label": t, "value": t} for t in ALPHA_LIST],
-                value=ALPHA_LIST.copy(),
-                multi=True,
-                placeholder="Enter tickers...",
-                className="mb-2",
-                searchable=False,
-                clearable=False,
-                style={"cursor": "default"},
-            ),
-            label_with_help("Add Custom Ticker", "help-add-ticker", "Enter ticker symbol and press Enter to add"),
+            label_with_help("Tickers", "help-tickers", "ETFs to include in the analysis. Click X to remove."),
+            dcc.Store(id="ticker-store", data=ALPHA_LIST.copy()),
+            html.Div(id="ticker-tags", className="mb-2", style={"display": "flex", "flexWrap": "wrap", "gap": "4px"}),
+            label_with_help("Add Ticker", "help-add-ticker", "Enter ticker symbol and press Enter to add"),
             dbc.InputGroup(
                 [
                     dbc.Input(
