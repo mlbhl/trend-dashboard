@@ -796,8 +796,8 @@ def create_main_content():
 
                             # Performance Charts Section
                             html.H4("Performance Charts", className="mb-3"),
-                            dcc.Graph(id="nav-chart", config={"displaylogo": False}),
-                            dcc.Graph(id="drawdown-chart", config={"displaylogo": False}),
+                            dcc.Graph(id="nav-chart", config={"displaylogo": False, "responsive": True}),
+                            dcc.Graph(id="drawdown-chart", config={"displaylogo": False, "responsive": True}),
 
                             # Signal Category Table
                             html.H4("Current Signal by Quantile", className="mb-3"),
@@ -806,7 +806,7 @@ def create_main_content():
                                 "Rank 1 = Best (Q5), Higher Rank = Worse (Q1). Format: Ticker (Rank)",
                                 className="text-muted d-block mb-2",
                             ),
-                            dcc.Graph(id="signal-table-chart", config={"displaylogo": False}),
+                            dcc.Graph(id="signal-table-chart", config={"displaylogo": False, "responsive": True}),
 
                             # Raw Signal Data Collapse
                             dbc.Button(
@@ -830,7 +830,7 @@ def create_main_content():
                                 id="quantile-spread-section",
                                 children=[
                                     html.H4("Quantile Spread (Q5 - Q1)", className="mb-3"),
-                                    dcc.Graph(id="spread-chart", config={"displaylogo": False}),
+                                    dcc.Graph(id="spread-chart", config={"displaylogo": False, "responsive": True}),
                                 ],
                             ),
 
@@ -867,11 +867,11 @@ def create_main_content():
                                     ),
                                 ],
                             ),
-                            dcc.Graph(id="heatmap-chart", config={"displaylogo": False}),
+                            dcc.Graph(id="heatmap-chart", config={"displaylogo": False, "responsive": True}),
 
                             # Performance Statistics Table
                             html.H4("Performance Statistics", className="mb-3"),
-                            dcc.Graph(id="stats-table-chart", config={"displaylogo": False}),
+                            dcc.Graph(id="stats-table-chart", config={"displaylogo": False, "responsive": True}),
 
                             # Stats DataFrame Collapse
                             dbc.Button(
@@ -1043,7 +1043,7 @@ def create_main_content():
                                     # Combined OOS NAV Chart
                                     html.H5("Combined Out-of-Sample NAV", className="mb-3"),
                                     html.Div(id="wf-oos-nav-info", className="text-muted mb-2"),
-                                    dcc.Graph(id="wf-oos-nav-chart", config={"displaylogo": False}),
+                                    dcc.Graph(id="wf-oos-nav-chart", config={"displaylogo": False, "responsive": True}),
                                     html.Div(id="wf-oos-sharpe-comparison", className="text-muted mb-3"),
                                 ],
                             ),

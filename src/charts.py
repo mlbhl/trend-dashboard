@@ -40,6 +40,7 @@ def create_nav_chart(
         xaxis_title="Date",
         yaxis_title="NAV",
         height=height,
+        autosize=True,
         hovermode='x unified',
         dragmode=False,
         xaxis=dict(fixedrange=True),
@@ -51,6 +52,7 @@ def create_nav_chart(
             xanchor="right",
             x=1
         ),
+        margin=dict(l=40, r=20, t=40, b=40),
     )
 
     return fig
@@ -94,10 +96,12 @@ def create_drawdown_chart(
         xaxis_title="Date",
         yaxis_title="Drawdown (%)",
         height=height,
+        autosize=True,
         hovermode='x unified',
         dragmode=False,
         xaxis=dict(fixedrange=True),
         yaxis=dict(fixedrange=True),
+        margin=dict(l=40, r=20, t=40, b=40),
         showlegend=False,
     )
 
@@ -144,6 +148,7 @@ def create_allocation_chart(
         xaxis_title="Date",
         yaxis_title="Weight",
         height=height,
+        autosize=True,
         hovermode='x unified',
         dragmode=False,
         xaxis=dict(fixedrange=True),
@@ -155,6 +160,7 @@ def create_allocation_chart(
             xanchor="right",
             x=1
         ),
+        margin=dict(l=40, r=20, t=40, b=40),
     )
 
     return fig
@@ -206,6 +212,7 @@ def create_holding_heatmap(
         xaxis_title="Month",
         yaxis_title="Ticker",
         height=height,
+        autosize=True,
         dragmode=False,
         xaxis=dict(
             type="date",
@@ -213,7 +220,6 @@ def create_holding_heatmap(
             tickvals=tickvals,
             ticktext=ticktext,
             tickangle=45,
-            #tickfont=dict(size=12),
             fixedrange=True,
         ),
         yaxis=dict(
@@ -223,6 +229,7 @@ def create_holding_heatmap(
             autorange="reversed",
             fixedrange=True,
         ),
+        margin=dict(l=60, r=20, t=40, b=60),
     )
 
     return fig
@@ -310,6 +317,7 @@ def create_signal_category_table(
         title=dict(text=title, font=dict(size=16)),
         margin=dict(l=10, r=10, t=40, b=10),
         height=100 + max_len * 50,
+        autosize=True,
     )
 
     return fig
@@ -354,9 +362,11 @@ def create_quantile_spread_chart(
         xaxis_title="Date",
         yaxis_title="Spread (NAV)",
         height=height,
+        autosize=True,
         dragmode=False,
         xaxis=dict(fixedrange=True),
         yaxis=dict(fixedrange=True),
+        margin=dict(l=40, r=20, t=40, b=40),
     )
 
     return fig
@@ -410,6 +420,7 @@ def create_returns_table(stats: pd.DataFrame) -> go.Figure:
 
     fig.update_layout(
         margin=dict(l=0, r=0, t=0, b=0),
+        autosize=True,
     )
 
     return fig

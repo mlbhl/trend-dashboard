@@ -36,8 +36,19 @@
         min-height: 100vh;
     }
 
-    /* Make charts responsive */
-    .js-plotly-plot {
+    /* Make Plotly charts fully responsive */
+    .js-plotly-plot,
+    .plot-container,
+    .plotly {
+        width: 100% !important;
+    }
+
+    .js-plotly-plot .plotly .main-svg {
+        width: 100% !important;
+    }
+
+    /* Ensure graph containers take full width */
+    .dash-graph {
         width: 100% !important;
     }
 
@@ -50,4 +61,20 @@
     .card {
         margin-bottom: 1rem;
     }
+
+    /* Make tabs scrollable on mobile */
+    .nav-tabs {
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .nav-tabs .nav-link {
+        white-space: nowrap;
+    }
+}
+
+/* General chart responsiveness */
+.dash-graph {
+    width: 100%;
 }
