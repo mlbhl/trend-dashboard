@@ -52,7 +52,7 @@ def create_sidebar_content():
 
             # Data Settings Section
             html.H6("Data Settings", className="text-muted mb-2"),
-            label_with_help("Download Start Date", "help-start-date", "Data download period start"),
+            label_with_help("Download Start Date", "help-start-date", "Start date for downloading historical data from Yahoo Finance."),
             dcc.DatePickerSingle(
                 id="start-date",
                 date=DEFAULT_START_DATE,
@@ -61,7 +61,7 @@ def create_sidebar_content():
                 display_format="YYYY-MM-DD",
                 className="mb-2 w-100",
             ),
-            label_with_help("Backtest Start Date", "help-backtest-date", "If data is insufficient, the earliest available date will be used."),
+            label_with_help("Backtest Start Date", "help-backtest-date", "If insufficient data are available, the earliest available date will be used."),
             dcc.DatePickerSingle(
                 id="backtest-start-date",
                 date=DEFAULT_BACKTEST_START_DATE,
@@ -74,10 +74,10 @@ def create_sidebar_content():
 
             # Ticker Selection Section
             html.H6("Ticker Selection", className="text-muted mb-2"),
-            label_with_help("Tickers", "help-tickers", "ETFs to include in the analysis. Click X to remove."),
+            label_with_help("Tickers", "help-tickers", "Select ETFs to include in the analysis. Click X to remove."),
             dcc.Store(id="ticker-store", data=ALPHA_LIST.copy()),
             html.Div(id="ticker-tags", className="mb-2", style={"display": "flex", "flexWrap": "wrap", "gap": "4px"}),
-            label_with_help("Add Ticker", "help-add-ticker", "Enter ticker symbol and press Enter to add"),
+            label_with_help("Add Ticker", "help-add-ticker", "Enter a ticker symbol and press Enter to add."),
             dbc.InputGroup(
                 [
                     dbc.Input(
@@ -101,7 +101,7 @@ def create_sidebar_content():
                 size="sm",
                 className="mb-2 p-0",
             ),
-            label_with_help("Min Valid Tickers", "help-thresh", "Minimum number of valid tickers required to run the analysis"),
+            label_with_help("Min Valid Tickers", "help-thresh", "Minimum number of valid tickers required for the analysis."),
             dcc.Slider(
                 id="thresh-slider",
                 min=2,
@@ -124,7 +124,7 @@ def create_sidebar_content():
                         style={"cursor": "pointer", "fontSize": "0.8rem"},
                     ),
                     dbc.Tooltip(
-                        "Lookback periods for momentum calculation. Shorter = more reactive, Longer = more stable.",
+                        "Lookback periods for momentum calculation. Shorter windows are more reactive, while longer windows are more stable.",
                         target="help-signal-windows",
                         placement="right",
                     ),
@@ -176,7 +176,7 @@ def create_sidebar_content():
                         style={"cursor": "pointer", "fontSize": "0.8rem"},
                     ),
                     dbc.Tooltip(
-                        "Relative importance of each window. Final signal = weighted average of 3 momentum ranks.",
+                        "Relative importance of each window. The final signal is computed as the weighted average of three momentum ranks.",
                         target="help-signal-weights",
                         placement="right",
                     ),
@@ -235,7 +235,7 @@ def create_sidebar_content():
 
             # Portfolio Settings Section
             html.H6("Portfolio Settings", className="text-muted mb-2"),
-            label_with_help("Strategy Type", "help-strategy-type", "Top-K: Invest in top K ranked assets. Quantile: Divide into groups to analyze momentum factor."),
+            label_with_help("Strategy Type", "help-strategy-type", "Top-K selects the top K ranked assets for investment. Quantile divides assets into groups to analyze momentum."),
             dcc.Dropdown(
                 id="strategy-type-select",
                 options=[
@@ -260,7 +260,7 @@ def create_sidebar_content():
                         style={"cursor": "pointer", "fontSize": "0.8rem"},
                     ),
                     dbc.Tooltip(
-                        "Select all available tickers at each rebalancing (dynamic K)",
+                        "Select all available tickers at each rebalancing, allowing K to vary over time.",
                         target="help-select-all",
                         placement="right",
                     ),
@@ -270,7 +270,7 @@ def create_sidebar_content():
             html.Div(
                 id="top-k-div",
                 children=[
-                    label_with_help("Top K", "help-top-k", "Number of top-ranked assets to include in portfolio. Lower K = more concentrated."),
+                    label_with_help("Top K", "help-top-k", "Number of top-ranked assets to include in the portfolio. Lower K results in a more concentrated portfolio."),
                     dcc.Slider(
                         id="top-k-slider",
                         min=1,
@@ -283,7 +283,7 @@ def create_sidebar_content():
                     ),
                 ],
             ),
-            label_with_help("Number of Quantiles", "help-n-quantiles", "Number of groups to divide assets into. Q5=Best, Q1=Worst for 5 quantiles."),
+            label_with_help("Number of Quantiles", "help-n-quantiles", "Number of groups to divide assets into. For five quantiles, Q5 represents the best-ranked group and Q1 the worst."),
             dcc.Slider(
                 id="n-quantiles-slider",
                 min=2,
@@ -294,7 +294,8 @@ def create_sidebar_content():
                 tooltip={"placement": "bottom", "always_visible": False},
                 className="mb-2",
             ),
-            label_with_help("Weighting Method", "help-weight-method", "Equal: 1/N weight | Inverse Vol: weight by 1/volatility | Rank: weight by 1/rank"),
+            label_with_help("Weighting Method", "help-weight-method", 
+                            "Portfolio weighting scheme. Equal assigns 1/N weights, Inverse Vol weights assets by the inverse of volatility, and Rank weights assets by the inverse of rank."),
             dcc.Dropdown(
                 id="weight-method-select",
                 options=[{"label": k, "value": v} for k, v in WEIGHT_METHODS.items()],
@@ -302,7 +303,7 @@ def create_sidebar_content():
                 clearable=False,
                 className="mb-2",
             ),
-            label_with_help("Transaction Cost (one-way)", "help-tcost", "Cost per trade in %. Applied to both buy and sell. Example: 0.001 = 0.1% per trade."),
+            label_with_help("Transaction Cost (one-way)", "help-tcost", "One-way transaction cost per trade, entered in decimal form. Applied to both buys and sells (e.g., 0.001 = 0.1%)."),
             dbc.Input(
                 id="tcost-input",
                 type="number",
@@ -334,7 +335,7 @@ def create_sidebar_content():
                         style={"cursor": "pointer", "fontSize": "0.8rem"},
                     ),
                     dbc.Tooltip(
-                        "EW uses equal weight of all selected tickers",
+                        "Equal Weight assigns equal weights across all selected tickers.",
                         target="help-bm-type",
                         placement="right",
                     ),
@@ -362,7 +363,7 @@ def create_sidebar_content():
                         ],
                         className="mb-1",
                     ),
-                    dbc.FormText("Enter ticker symbol and press Enter to apply", className="mb-2"),
+                    dbc.FormText("Enter a ticker symbol and press Enter to apply.", className="mb-2"),
                     html.Div(id="bm-ticker-status", className="mb-2"),
                 ],
                 style={"display": "none"},
@@ -393,7 +394,7 @@ def create_sidebar_content():
                         style={"cursor": "pointer", "fontSize": "0.8rem"},
                     ),
                     dbc.Tooltip(
-                        "Grid search to find optimal window/weight parameters. Maximizes Sharpe ratio on Backtest Start Date period.",
+                        "Uses grid search to optimize window and weight parameters by maximizing the Sharpe ratio over the backtest period.",
                         target="help-optimization",
                         placement="right",
                     ),
@@ -422,7 +423,7 @@ def create_sidebar_content():
                         style={"cursor": "pointer", "fontSize": "0.8rem"},
                     ),
                     dbc.Tooltip(
-                        "Full: Test all 2,016 combinations. Random: Sample subset for faster results.",
+                        "Full Grid evaluates all 2,016 parameter combinations. Random Grid samples a subset to reduce computation time.",
                         target="help-opt-mode",
                         placement="right",
                     ),
@@ -436,7 +437,7 @@ def create_sidebar_content():
                         [
                             dbc.Col(
                                 [
-                                    label_with_help("Samples", "help-opt-samples", "Number of random combinations to test (100~2016).", size="sm"),
+                                    label_with_help("Samples", "help-opt-samples", "Number of random parameter combinations to test (100 to 2,016).", size="sm"),
                                     dbc.Input(
                                         id="opt-samples-input",
                                         type="number",
@@ -487,7 +488,7 @@ def create_sidebar_content():
                         style={"cursor": "pointer", "fontSize": "0.8rem"},
                     ),
                     dbc.Tooltip(
-                        "Out-of-sample validation. Trains on past data, tests on future. Measures strategy robustness and overfitting risk.",
+                        "Performs out-of-sample validation by training on past data and testing on future data. Assesses strategy robustness and overfitting risk.",
                         target="help-walk-forward",
                         placement="right",
                     ),
@@ -518,7 +519,7 @@ def create_sidebar_content():
                                 style={"cursor": "pointer", "fontSize": "0.7rem"},
                             ),
                             dbc.Tooltip(
-                                "Rolling: Fixed lookback. Expanding: Uses all available history.",
+                                "Rolling uses a fixed lookback window. Expanding uses all available historical data.",
                                 target="help-wf-window-type",
                                 placement="right",
                             ),
@@ -535,7 +536,7 @@ def create_sidebar_content():
                         inline=True,
                         className="mb-2",
                     ),
-                    label_with_help("Train Period (months)", "help-wf-train", "Length of in-sample training period. Longer = more data but less folds.", size="sm"),
+                    label_with_help("Train Period (months)", "help-wf-train", "Length of the in-sample training period. Longer periods provide more data but fewer folds.", size="sm"),
                     dbc.Input(
                         id="wf-train-input",
                         type="number",
@@ -546,7 +547,7 @@ def create_sidebar_content():
                         className="mb-1",
                     ),
                     html.Div(id="wf-train-warning", className="mb-1"),
-                    label_with_help("Test Period (months)", "help-wf-test", "Length of out-of-sample test period for each fold.", size="sm"),
+                    label_with_help("Test Period (months)", "help-wf-test", "Length of the out-of-sample test period for each fold.", size="sm"),
                     dbc.Input(
                         id="wf-test-input",
                         type="number",
@@ -556,7 +557,7 @@ def create_sidebar_content():
                         size="sm",
                         className="mb-2",
                     ),
-                    label_with_help("Step Size (months)", "help-wf-step", "How far to advance between folds. Smaller = more overlap.", size="sm"),
+                    label_with_help("Step Size (months)", "help-wf-step", "How far the window moves forward between folds. Smaller step sizes lead to more overlap.", size="sm"),
                     dbc.Input(
                         id="wf-step-input",
                         type="number",
@@ -566,19 +567,19 @@ def create_sidebar_content():
                         size="sm",
                         className="mb-2",
                     ),
-                    label_with_help("Samples per Fold", "help-wf-samples", "Number of random parameter combinations to test per fold (100~5000).", size="sm"),
+                    label_with_help("Samples per Fold", "help-wf-samples", "Number of random parameter combinations to test per fold (100 to 2,016).", size="sm"),
                     dbc.Input(
                         id="wf-samples-input",
                         type="number",
                         value=500,
                         min=1,
-                        max=5000,
+                        max=2016,
                         step=1,
                         size="sm",
                         className="mb-1",
                     ),
                     html.Div(id="wf-samples-warning", className="mb-1"),
-                    label_with_help("Seed", "help-wf-seed", "Random seed for reproducible results. Leave empty for random.", size="sm"),
+                    label_with_help("Seed", "help-wf-seed", "Random seed for reproducible results.", size="sm"),
                     dbc.Input(
                         id="wf-seed-input",
                         type="text",
@@ -674,7 +675,7 @@ def create_main_content():
                     dbc.Alert(
                         [
                             html.I(className="fas fa-arrow-left me-2"),
-                            "Configure parameters in the sidebar and click ",
+                            "Configure parameters in the sidebar, then click ",
                             html.Strong("Run Analysis"),
                             " to start.",
                         ],
@@ -692,17 +693,17 @@ def create_main_content():
                                 html.H5("Quick Start"),
                                 html.Ol(
                                     [
-                                        html.Li("Select tickers in the sidebar (or use defaults)"),
-                                        html.Li("Click Run Analysis"),
-                                        html.Li("Review the results"),
+                                        html.Li("Select tickers in the sidebar (or use the default set)."),
+                                        html.Li("Click Run Analysis."),
+                                        html.Li("Review the results."),
                                     ]
                                 ),
                                 html.Hr(),
                                 html.H5("Signal Parameters"),
                                 html.P(
-                                    "Momentum is measured using 3 lookback periods (Short/Mid/Long). "
-                                    "For each period, assets are ranked by returns and the final signal "
-                                    "is a weighted average of these ranks."
+                                    "Momentum is measured using three lookback periods (Short, Mid, and Long). " 
+                                    "For each period, assets are ranked by returns, and the final signal " 
+                                    "is computed as the weighted average of these ranks."
                                 ),
                                 html.Hr(),
                                 html.H5("Portfolio Settings"),
@@ -711,13 +712,13 @@ def create_main_content():
                                         html.Li(
                                             [
                                                 html.Strong("Top-K: "),
-                                                "Invests in top K ranked assets",
+                                                "selects the top K ranked assets for investment.",
                                             ]
                                         ),
                                         html.Li(
                                             [
                                                 html.Strong("Quantile: "),
-                                                "Divides assets into groups to analyze momentum factor",
+                                                "divides assets into groups to analyze momentum.",
                                             ]
                                         ),
                                     ]
@@ -761,31 +762,23 @@ def create_main_content():
                                             html.H6("Signal Parameters"),
                                             html.Ul(
                                                 [
-                                                    html.Li(
-                                                        "Signal Window: Lookback period in months for each timeframe"
-                                                    ),
-                                                    html.Li(
-                                                        "Signal Weight: Weight for each window (Equal 1/3 or Custom)"
-                                                    ),
+                                                    html.Li("Signal Window: Lookback period (in months) for each timeframe."),
+                                                    html.Li("Signal Weight: Weight assigned to each window (equal 1/3 or custom)."),
                                                 ]
                                             ),
                                             html.H6("Strategy Types"),
                                             html.Ul(
                                                 [
-                                                    html.Li("Top-K: Invests in top K ranked assets"),
-                                                    html.Li(
-                                                        "Quantile: Divides assets into groups to analyze momentum factor"
-                                                    ),
+                                                    html.Li("Top-K selects the top K ranked assets for investment."),
+                                                    html.Li("Quantile divides assets into groups to analyze momentum."),
                                                 ]
                                             ),
                                             html.H6("Weighting Methods"),
                                             html.Ul(
                                                 [
-                                                    html.Li("Equal: 1/N weight for each asset"),
-                                                    html.Li(
-                                                        "Inverse Vol: Higher weight to lower volatility assets"
-                                                    ),
-                                                    html.Li("Rank: Higher weight to better ranked assets"),
+                                                    html.Li("Equal assigns 1/N weights to each asset."),
+                                                    html.Li("Inverse Vol assigns higher weights to lower-volatility assets."),
+                                                    html.Li("Rank assigns higher weights to better-ranked assets."),
                                                 ]
                                             ),
                                         ]
@@ -803,7 +796,7 @@ def create_main_content():
                             html.H4("Current Signal by Quantile", className="mb-3"),
                             html.Div(id="signal-date-info", className="text-muted mb-2"),
                             html.Small(
-                                "Rank 1 = Best (Q5), Higher Rank = Worse (Q1). Format: Ticker (Rank)",
+                                "Rank 1 represents the best-performing group, while higher ranks indicate worse performance. Entries are shown as Ticker (Rank).",
                                 className="text-muted d-block mb-2",
                             ),
                             dcc.Graph(id="signal-table-chart", config={"displaylogo": False, "responsive": True}),
@@ -829,7 +822,7 @@ def create_main_content():
                             html.Div(
                                 id="quantile-spread-section",
                                 children=[
-                                    html.H4("Quantile Spread (Q5 - Q1)", className="mb-3"),
+                                    html.H4("Top–Bottom Quantile Spread", className="mb-3"),
                                     dcc.Graph(id="spread-chart", config={"displaylogo": False, "responsive": True}),
                                 ],
                             ),
@@ -837,7 +830,7 @@ def create_main_content():
                             # Holdings Heatmap Section
                             html.H4("Holdings Analysis", className="mb-3"),
                             html.Small(
-                                "Q5 = Best performers (Rank 1~), Q1 = Worst performers",
+                                "The top quantile represents the best-performing assets, while the bottom quantile represents the worst.",
                                 className="text-muted d-block mb-2",
                             ),
                             html.Div(
