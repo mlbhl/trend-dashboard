@@ -133,14 +133,6 @@ def register_callbacks(app):
                 style={"fontSize": "0.75rem"},
             ), True
 
-        if samples < 200:
-            return dbc.Alert(
-                "⚠️ Samples < 200 may produce unreliable results.",
-                color="warning",
-                className="py-1 px-2 mb-0",
-                style={"fontSize": "0.75rem"},
-            ), False
-
         return None, False
 
     @app.callback(
@@ -165,13 +157,6 @@ def register_callbacks(app):
                 style={"fontSize": "0.75rem"},
             )
             disabled = True
-        elif train_months is not None and train_months > 60:
-            train_warning = dbc.Alert(
-                "⚠️ Train > 60 months may leave insufficient test data.",
-                color="warning",
-                className="py-1 px-2 mb-0",
-                style={"fontSize": "0.75rem"},
-            )
 
         # Validate samples
         if samples is not None and samples < 100:
@@ -182,13 +167,6 @@ def register_callbacks(app):
                 style={"fontSize": "0.75rem"},
             )
             disabled = True
-        elif samples is not None and samples < 200:
-            samples_warning = dbc.Alert(
-                "⚠️ Samples < 200 may produce unreliable results.",
-                color="warning",
-                className="py-1 px-2 mb-0",
-                style={"fontSize": "0.75rem"},
-            )
 
         return train_warning, samples_warning, disabled
 
@@ -202,6 +180,34 @@ def register_callbacks(app):
         if n_clicks:
             return not is_open
         return is_open
+
+    @app.callback(
+        Output("signal-settings-collapse", "is_open"),
+        Input("signal-settings-collapse-btn", "n_clicks"),
+        State("signal-settings-collapse", "is_open"),
+    )
+    def toggle_signal_settings(n_clicks, is_open):
+        """Toggle signal settings collapse."""
+        if n_clicks:
+            return not is_open
+        return is_open
+
+    @app.callback(
+        Output("wf-results-collapse", "is_open"),
+        Output("wf-results-collapse-btn", "children"),
+        Input("wf-results-collapse-btn", "n_clicks"),
+        State("wf-results-collapse", "is_open"),
+    )
+    def toggle_wf_results(n_clicks, is_open):
+        """Toggle walk-forward results collapse."""
+        if n_clicks:
+            new_is_open = not is_open
+            if new_is_open:
+                btn_children = [html.I(className="fas fa-chevron-up me-1"), "Hide"]
+            else:
+                btn_children = [html.I(className="fas fa-chevron-down me-1"), "Show"]
+            return new_is_open, btn_children
+        return is_open, [html.I(className="fas fa-chevron-up me-1"), "Hide"]
 
     @app.callback(
         Output("user-guide-collapse", "is_open"),
@@ -324,6 +330,7 @@ def register_callbacks(app):
         Output("analysis-results", "style"),
         Output("analysis-loading", "style"),
         Output("analysis-warnings", "children"),
+        Output("walk-forward-results-section", "style", allow_duplicate=True),
         Input("run-analysis-btn", "n_clicks"),
         State("start-date", "date"),
         State("backtest-start-date", "date"),
@@ -407,6 +414,7 @@ def register_callbacks(app):
                 {"display": "none"},  # Hide results
                 {"display": "none"},  # Hide loading
                 dbc.Alert([html.I(className="fas fa-times-circle me-2"), error_msg], color="danger"),
+                {"display": "none"},  # Hide walk-forward results
             )
 
         # Collect warnings
@@ -540,6 +548,7 @@ def register_callbacks(app):
             {"display": "block"},  # Show results
             {"display": "none"},  # Hide loading
             warnings if warnings else "",  # Show warnings
+            {"display": "none"},  # Hide walk-forward results
         )
 
     # =========================================================================
@@ -1019,6 +1028,7 @@ def register_callbacks(app):
             "final_train_period": wf_result["final_train_period"],
             "oos_date_range": wf_result["oos_date_range"],
             "combined_oos_nav": wf_result["combined_oos_nav"].to_json(date_format="iso") if wf_result["combined_oos_nav"] is not None else None,
+            "combined_oos_bm_nav": wf_result["combined_oos_bm_nav"].to_json(date_format="iso") if wf_result["combined_oos_bm_nav"] is not None else None,
             "_bm_type": bm_type,
             "_bm_ticker": wf_bm_ticker if bm_type == "custom" else None,
         }
@@ -1047,6 +1057,8 @@ def register_callbacks(app):
 
     @app.callback(
         Output("walk-forward-results-section", "style"),
+        Output("wf-results-collapse", "is_open", allow_duplicate=True),
+        Output("wf-results-collapse-btn", "children", allow_duplicate=True),
         Output("wf-results-title", "children"),
         Output("wf-is-sharpe", "children"),
         Output("wf-oos-sharpe", "children"),
@@ -1063,10 +1075,9 @@ def register_callbacks(app):
         Output("wf-oos-nav-chart", "figure"),
         Output("wf-oos-sharpe-comparison", "children"),
         Input("walk-forward-store", "data"),
-        State("dataset-store", "data"),
         prevent_initial_call=True,
     )
-    def update_walk_forward_results(wf_store, dataset_json):
+    def update_walk_forward_results(wf_store):
         """Update walk-forward results display."""
         if not wf_store:
             raise PreventUpdate
@@ -1188,24 +1199,13 @@ def register_callbacks(app):
                 )
             )
 
-            # Compute benchmark NAV if dataset available
+            # Use stored benchmark NAV from walk-forward optimization
             oos_bm_nav = None
-            oos_date_range = wf_store.get("oos_date_range")
-
-            if oos_date_range and dataset_json:
-                dataset = pd.read_json(dataset_json)
-                dataset.index = pd.to_datetime(dataset.index)
-                dataset = dataset.sort_index()
-
-                oos_start = oos_date_range["start"]
-                oos_end = oos_date_range["end"]
-
-                # Equal weight benchmark
-                dataset_slice = dataset[oos_start:oos_end]
-                if len(dataset_slice) > 0:
-                    daily_ret = dataset_slice.pct_change().fillna(0)
-                    ew_ret = daily_ret.mean(axis=1)
-                    oos_bm_nav = (1 + ew_ret).cumprod() * 100
+            if wf_store.get("combined_oos_bm_nav"):
+                oos_bm_nav = pd.read_json(wf_store["combined_oos_bm_nav"], typ="series")
+                oos_bm_nav.index = pd.to_datetime(oos_bm_nav.index)
+                oos_bm_nav = oos_bm_nav.sort_index()
+                oos_bm_nav = oos_bm_nav / oos_bm_nav.iloc[0] * 100
 
             if oos_bm_nav is not None and len(oos_bm_nav) > 0:
                 fig_oos.add_trace(
@@ -1224,6 +1224,9 @@ def register_callbacks(app):
                 yaxis_title="NAV",
                 template="plotly_white",
                 height=400,
+                dragmode=False,
+                xaxis=dict(fixedrange=True),
+                yaxis=dict(fixedrange=True),
                 legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
             )
 
@@ -1244,6 +1247,8 @@ def register_callbacks(app):
 
         return (
             {"display": "block"},
+            True,  # Reset collapse to open
+            [html.I(className="fas fa-chevron-up me-1"), "Hide"],  # Reset button
             title,
             is_sharpe,
             oos_sharpe,

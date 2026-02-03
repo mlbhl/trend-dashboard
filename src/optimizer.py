@@ -229,9 +229,6 @@ def optimize_sharpe_period(
         short, mid, long = lb
         short_wgt, mid_wgt, long_wgt = wt
 
-        if progress_callback:
-            progress_callback(current, total)
-
         signal = combine_signals(
             momentums, short, mid, long,
             short_wgt, mid_wgt, long_wgt,
@@ -239,6 +236,8 @@ def optimize_sharpe_period(
         )
 
         if len(signal) == 0:
+            if progress_callback:
+                progress_callback(current, total)
             continue
 
         sharpe = fast_backtest_sharpe(
@@ -250,6 +249,8 @@ def optimize_sharpe_period(
         )
 
         if np.isnan(sharpe):
+            if progress_callback:
+                progress_callback(current, total)
             continue
 
         if sharpe > best_sharpe:
@@ -262,6 +263,9 @@ def optimize_sharpe_period(
                 'mid_wgt': mid_wgt,
                 'long_wgt': long_wgt,
             }
+
+        if progress_callback:
+            progress_callback(current, total)
 
     return {
         'best_params': best_params,
@@ -331,9 +335,6 @@ def optimize_sharpe(
         short, mid, long = lb
         short_wgt, mid_wgt, long_wgt = wt
 
-        if progress_callback:
-            progress_callback(current, total)
-
         # Generate signal using precomputed momentums
         signal = combine_signals(
             momentums, short, mid, long,
@@ -342,6 +343,8 @@ def optimize_sharpe(
         )
 
         if len(signal) == 0:
+            if progress_callback:
+                progress_callback(current, total)
             continue
 
         # Run fast backtest
@@ -354,6 +357,8 @@ def optimize_sharpe(
         )
 
         if np.isnan(sharpe):
+            if progress_callback:
+                progress_callback(current, total)
             continue
 
         results.append({
@@ -376,6 +381,9 @@ def optimize_sharpe(
                 'mid_wgt': mid_wgt,
                 'long_wgt': long_wgt,
             }
+
+        if progress_callback:
+            progress_callback(current, total)
 
     return {
         'best_params': best_params,
@@ -608,7 +616,7 @@ def walk_forward_optimize(
     # Progress callback for final training (use fold index = total_folds + 1)
     def final_progress(current, total):
         if progress_callback:
-            progress_callback(total_folds + 1, total_folds + 1, current, total)
+            progress_callback(total_folds + 1, total_folds, current, total)
 
     final_result = optimize_sharpe_period(
         price=price,
@@ -643,6 +651,7 @@ def walk_forward_optimize(
     return {
         'folds': fold_results,
         'combined_oos_nav': combined_oos_nav,
+        'combined_oos_bm_nav': combined_oos_bm_nav,
         'oos_date_range': oos_date_range,
         'oos_sharpe': combined_oos_sharpe,
         'oos_sharpe_avg': oos_sharpe_avg,

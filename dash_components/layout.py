@@ -50,28 +50,6 @@ def create_sidebar_content():
     return [
         html.H4("Parameters", className="mb-3"),
 
-            # Data Settings Section
-            html.H6("Data Settings", className="text-muted mb-2"),
-            label_with_help("Download Start Date", "help-start-date", "Start date for downloading historical data from Yahoo Finance."),
-            dcc.DatePickerSingle(
-                id="start-date",
-                date=DEFAULT_START_DATE,
-                min_date_allowed="1990-01-01",
-                max_date_allowed=date.today(),
-                display_format="YYYY-MM-DD",
-                className="mb-2 w-100",
-            ),
-            label_with_help("Backtest Start Date", "help-backtest-date", "If insufficient data are available, the earliest available date will be used."),
-            dcc.DatePickerSingle(
-                id="backtest-start-date",
-                date=DEFAULT_BACKTEST_START_DATE,
-                min_date_allowed="1990-01-01",
-                max_date_allowed=date.today(),
-                display_format="YYYY-MM-DD",
-                className="mb-3 w-100",
-            ),
-            html.Hr(),
-
             # Ticker Selection Section
             html.H6("Ticker Selection", className="text-muted mb-2"),
             label_with_help("Tickers", "help-tickers", "Select ETFs to include in the analysis. Click X to remove."),
@@ -114,120 +92,144 @@ def create_sidebar_content():
             ),
             html.Hr(),
 
-            # Signal Window Parameters Section
-            html.Div(
-                [
-                    html.H6("Signal Window Parameters", className="text-muted d-inline me-2"),
-                    html.Span(
-                        html.I(className="fas fa-question-circle text-muted"),
-                        id="help-signal-windows",
-                        style={"cursor": "pointer", "fontSize": "0.8rem"},
-                    ),
-                    dbc.Tooltip(
-                        "Lookback periods for momentum calculation. Shorter windows are more reactive, while longer windows are more stable.",
-                        target="help-signal-windows",
-                        placement="right",
-                    ),
-                ],
-                className="mb-2",
+            # Data Settings Section
+            html.H6("Data Settings", className="text-muted mb-2"),
+            label_with_help("Download Start Date", "help-start-date", "Start date for downloading historical data from Yahoo Finance."),
+            dcc.DatePickerSingle(
+                id="start-date",
+                date=DEFAULT_START_DATE,
+                min_date_allowed="1990-01-01",
+                max_date_allowed=date.today(),
+                display_format="YYYY-MM-DD",
+                className="mb-2 w-100",
             ),
-            dbc.Label("Short Window (months)"),
-            dcc.Slider(
-                id="short-window-slider",
-                min=1,
-                max=12,
-                step=1,
-                value=DEFAULT_SHORT_WINDOW,
-                marks={i: str(i) for i in [1, 3, 6, 9, 12]},
-                tooltip={"placement": "bottom", "always_visible": False},
-                className="mb-2",
-            ),
-            dbc.Label("Mid Window (months)"),
-            dcc.Slider(
-                id="mid-window-slider",
-                min=1,
-                max=12,
-                step=1,
-                value=DEFAULT_MID_WINDOW,
-                marks={i: str(i) for i in [1, 3, 6, 9, 12]},
-                tooltip={"placement": "bottom", "always_visible": False},
-                className="mb-2",
-            ),
-            dbc.Label("Long Window (months)"),
-            dcc.Slider(
-                id="long-window-slider",
-                min=1,
-                max=12,
-                step=1,
-                value=DEFAULT_LONG_WINDOW,
-                marks={i: str(i) for i in [1, 3, 6, 9, 12]},
-                tooltip={"placement": "bottom", "always_visible": False},
-                className="mb-3",
+            label_with_help("Backtest Start Date", "help-backtest-date", "If insufficient data are available, the earliest available date will be used."),
+            dcc.DatePickerSingle(
+                id="backtest-start-date",
+                date=DEFAULT_BACKTEST_START_DATE,
+                min_date_allowed="1990-01-01",
+                max_date_allowed=date.today(),
+                display_format="YYYY-MM-DD",
+                className="mb-3 w-100",
             ),
             html.Hr(),
 
-            # Signal Weight Parameters Section
+            # Signal Parameters Section (Collapsible)
             html.Div(
                 [
-                    html.H6("Signal Weight Parameters", className="text-muted d-inline me-2"),
+                    html.H6("Signal Parameters", className="text-muted d-inline me-2"),
                     html.Span(
                         html.I(className="fas fa-question-circle text-muted"),
-                        id="help-signal-weights",
+                        id="help-signal-params",
                         style={"cursor": "pointer", "fontSize": "0.8rem"},
                     ),
                     dbc.Tooltip(
-                        "Relative importance of each window. The final signal is computed as the weighted average of three momentum ranks.",
-                        target="help-signal-weights",
+                        "Parameters for momentum signal calculation including lookback windows and their weights.",
+                        target="help-signal-params",
                         placement="right",
                     ),
                 ],
                 className="mb-2",
             ),
-            dbc.RadioItems(
-                id="weight-mode-radio",
-                options=[
-                    {"label": "Equal (1/3 each)", "value": "equal"},
-                    {"label": "Custom", "value": "custom"},
-                ],
-                value="custom",
-                inline=True,
-                className="mb-2",
+            dbc.Button(
+                "Signal Settings",
+                id="signal-settings-collapse-btn",
+                color="link",
+                size="sm",
+                className="p-0 mb-2",
             ),
-            html.Div(
-                id="custom-weight-div",
+            dbc.Collapse(
+                id="signal-settings-collapse",
+                is_open=False,
                 children=[
-                    dbc.Label("Short Weight"),
+                    # Signal Window Parameters
+                    html.Div(
+                        label_with_help("Window Parameters", "help-signal-windows", "Lookback periods for momentum calculation. Shorter windows are more reactive, while longer windows are more stable."),
+                        className="mt-2",
+                    ),
+                    dbc.Label("Short Window (months)", size="sm"),
                     dcc.Slider(
-                        id="short-weight-slider",
-                        min=0,
-                        max=1,
-                        step=0.01,
-                        value=DEFAULT_SHORT_WEIGHT,
-                        marks={0: "0", 0.5: "0.5", 1: "1"},
+                        id="short-window-slider",
+                        min=1,
+                        max=12,
+                        step=1,
+                        value=DEFAULT_SHORT_WINDOW,
+                        marks={i: str(i) for i in [1, 3, 6, 9, 12]},
                         tooltip={"placement": "bottom", "always_visible": False},
                         className="mb-2",
                     ),
-                    dbc.Label("Mid Weight"),
+                    dbc.Label("Mid Window (months)", size="sm"),
                     dcc.Slider(
-                        id="mid-weight-slider",
-                        min=0,
-                        max=1,
-                        step=0.01,
-                        value=DEFAULT_MID_WEIGHT,
-                        marks={0: "0", 0.5: "0.5", 1: "1"},
+                        id="mid-window-slider",
+                        min=1,
+                        max=12,
+                        step=1,
+                        value=DEFAULT_MID_WINDOW,
+                        marks={i: str(i) for i in [1, 3, 6, 9, 12]},
                         tooltip={"placement": "bottom", "always_visible": False},
                         className="mb-2",
                     ),
-                    dbc.Label("Long Weight"),
+                    dbc.Label("Long Window (months)", size="sm"),
                     dcc.Slider(
-                        id="long-weight-slider",
-                        min=0,
-                        max=1,
-                        step=0.01,
-                        value=DEFAULT_LONG_WEIGHT,
-                        marks={0: "0", 0.5: "0.5", 1: "1"},
+                        id="long-window-slider",
+                        min=1,
+                        max=12,
+                        step=1,
+                        value=DEFAULT_LONG_WINDOW,
+                        marks={i: str(i) for i in [1, 3, 6, 9, 12]},
                         tooltip={"placement": "bottom", "always_visible": False},
+                        className="mb-3",
+                    ),
+
+                    # Signal Weight Parameters
+                    label_with_help("Weight Parameters", "help-signal-weights", "Relative importance of each window. The final signal is computed as the weighted average of three momentum ranks."),
+                    dbc.RadioItems(
+                        id="weight-mode-radio",
+                        options=[
+                            {"label": "Equal (1/3 each)", "value": "equal"},
+                            {"label": "Custom", "value": "custom"},
+                        ],
+                        value="custom",
+                        inline=True,
                         className="mb-2",
+                    ),
+                    html.Div(
+                        id="custom-weight-div",
+                        children=[
+                            dbc.Label("Short Weight", size="sm"),
+                            dcc.Slider(
+                                id="short-weight-slider",
+                                min=0,
+                                max=1,
+                                step=0.01,
+                                value=DEFAULT_SHORT_WEIGHT,
+                                marks={0: "0", 0.5: "0.5", 1: "1"},
+                                tooltip={"placement": "bottom", "always_visible": False},
+                                className="mb-2",
+                            ),
+                            dbc.Label("Mid Weight", size="sm"),
+                            dcc.Slider(
+                                id="mid-weight-slider",
+                                min=0,
+                                max=1,
+                                step=0.01,
+                                value=DEFAULT_MID_WEIGHT,
+                                marks={0: "0", 0.5: "0.5", 1: "1"},
+                                tooltip={"placement": "bottom", "always_visible": False},
+                                className="mb-2",
+                            ),
+                            dbc.Label("Long Weight", size="sm"),
+                            dcc.Slider(
+                                id="long-weight-slider",
+                                min=0,
+                                max=1,
+                                step=0.01,
+                                value=DEFAULT_LONG_WEIGHT,
+                                marks={0: "0", 0.5: "0.5", 1: "1"},
+                                tooltip={"placement": "bottom", "always_visible": False},
+                                className="mb-2",
+                            ),
+                        ],
                     ),
                 ],
             ),
@@ -252,20 +254,20 @@ def create_sidebar_content():
                         id="select-all-tickers-checkbox",
                         label="Select All Tickers",
                         value=False,
-                        className="d-inline",
+                        className="me-2",
                     ),
                     html.Span(
-                        html.I(className="fas fa-question-circle text-muted ms-2"),
+                        html.I(className="fas fa-question-circle text-muted"),
                         id="help-select-all",
                         style={"cursor": "pointer", "fontSize": "0.8rem"},
                     ),
                     dbc.Tooltip(
-                        "Select all available tickers at each rebalancing, allowing K to vary over time.",
+                        "Select all available tickers at each rebalancing. This option is only meaningful with Rank weighting, where the signal determines portfolio weights.",
                         target="help-select-all",
                         placement="right",
                     ),
                 ],
-                className="mb-2",
+                className="d-flex align-items-center mb-2",
             ),
             html.Div(
                 id="top-k-div",
@@ -598,6 +600,13 @@ def create_sidebar_content():
             ),
             html.Div(id="wf-progress-div", className="mb-2"),
             html.Div(id="wf-result-div", className="mb-3"),
+
+            # Copyright
+            html.Hr(className="mt-4"),
+            html.Small(
+                "© 2026 Byounghyo Lim. All rights reserved.",
+                className="text-muted d-block text-center",
+            ),
     ]
 
 
@@ -647,7 +656,7 @@ def create_main_content():
     """Create the main content area."""
     return dbc.Col(
         [
-            html.H2("Momentum Strategy Dashboard", className="mb-4"),
+            html.H2("Momentum Rotation Strategy Dashboard", className="mb-4"),
 
             # Loading indicator (shown while analysis is running)
             html.Div(
@@ -701,9 +710,11 @@ def create_main_content():
                                 html.Hr(),
                                 html.H5("Signal Parameters"),
                                 html.P(
-                                    "Momentum is measured using three lookback periods (Short, Mid, and Long). " 
-                                    "For each period, assets are ranked by returns, and the final signal " 
-                                    "is computed as the weighted average of these ranks."
+                                    [
+                                        "Momentum is measured using three lookback periods (Short, Mid, and Long).",
+                                        html.Br(),
+                                        "For each period, assets are ranked by returns, and the final signal is computed as the weighted average of these ranks.",
+                                    ]
                                 ),
                                 html.Hr(),
                                 html.H5("Portfolio Settings"),
@@ -886,158 +897,149 @@ def create_main_content():
                                 style={"display": "none"},
                                 children=[
                                     html.Hr(),
-                                    html.H4(id="wf-results-title", className="mb-3"),
-
-                                    # WF Summary Metrics
-                                    dbc.Row(
+                                    html.Div(
                                         [
-                                            dbc.Col(
-                                                dbc.Card(
-                                                    dbc.CardBody(
-                                                        [
-                                                            html.H6(
-                                                                "In-Sample Sharpe (avg)",
-                                                                className="text-muted",
-                                                            ),
-                                                            html.H4(id="wf-is-sharpe"),
-                                                        ]
-                                                    )
-                                                ),
-                                                width=3,
-                                            ),
-                                            dbc.Col(
-                                                dbc.Card(
-                                                    dbc.CardBody(
-                                                        [
-                                                            html.H6(
-                                                                "Out-of-Sample Sharpe (avg)",
-                                                                className="text-muted",
-                                                            ),
-                                                            html.H4(id="wf-oos-sharpe"),
-                                                        ]
-                                                    )
-                                                ),
-                                                width=3,
-                                            ),
-                                            dbc.Col(
-                                                dbc.Card(
-                                                    dbc.CardBody(
-                                                        [
-                                                            html.H6(
-                                                                "Combined OOS Sharpe",
-                                                                className="text-muted",
-                                                            ),
-                                                            html.H4(id="wf-combined-sharpe"),
-                                                        ]
-                                                    )
-                                                ),
-                                                width=3,
-                                            ),
-                                            dbc.Col(
-                                                dbc.Card(
-                                                    dbc.CardBody(
-                                                        [
-                                                            html.H6("Sharpe Decay", className="text-muted"),
-                                                            html.H4(id="wf-sharpe-decay"),
-                                                        ]
-                                                    )
-                                                ),
-                                                width=3,
+                                            html.H4(id="wf-results-title", className="d-inline me-3"),
+                                            dbc.Button(
+                                                [html.I(id="wf-collapse-icon", className="fas fa-chevron-up me-1"), "Hide"],
+                                                id="wf-results-collapse-btn",
+                                                color="link",
+                                                size="sm",
+                                                className="p-0",
                                             ),
                                         ],
-                                        className="mb-3",
+                                        className="d-flex align-items-center mb-3",
                                     ),
-
-                                    # WF Interpretation
-                                    html.Div(id="wf-interpretation-div", className="mb-3"),
-
-                                    # Fold Results Table
-                                    html.H5("Fold Results", className="mb-3"),
-                                    html.Div(id="wf-fold-table-container", className="mb-4"),
-
-                                    # Recommended Parameters
-                                    html.Div(
-                                        id="wf-recommended-params-section",
+                                    dbc.Collapse(
+                                        id="wf-results-collapse",
+                                        is_open=True,
                                         children=[
-                                            html.H5("Recommended Parameters", className="mb-3"),
-                                            html.Div(id="wf-train-period-info", className="text-muted mb-2"),
+                                            # WF Summary Metrics
                                             dbc.Row(
                                                 [
                                                     dbc.Col(
                                                         dbc.Card(
                                                             dbc.CardBody(
                                                                 [
-                                                                    html.H6(
-                                                                        "Windows (S/M/L)",
-                                                                        className="text-muted",
-                                                                    ),
-                                                                    html.H5(id="wf-rec-windows"),
+                                                                    html.H6("In-Sample Sharpe (avg)", className="text-muted"),
+                                                                    html.H4(id="wf-is-sharpe"),
                                                                 ]
                                                             )
                                                         ),
-                                                        width=4,
+                                                        width=3,
                                                     ),
                                                     dbc.Col(
                                                         dbc.Card(
                                                             dbc.CardBody(
                                                                 [
-                                                                    html.H6(
-                                                                        "Weights (S/M/L)",
-                                                                        className="text-muted",
-                                                                    ),
-                                                                    html.H5(id="wf-rec-weights"),
+                                                                    html.H6("Out-of-Sample Sharpe (avg)", className="text-muted"),
+                                                                    html.H4(id="wf-oos-sharpe"),
                                                                 ]
                                                             )
                                                         ),
-                                                        width=4,
+                                                        width=3,
                                                     ),
                                                     dbc.Col(
                                                         dbc.Card(
                                                             dbc.CardBody(
                                                                 [
-                                                                    html.H6(
-                                                                        "In-Sample Sharpe",
-                                                                        className="text-muted",
-                                                                    ),
-                                                                    html.H5(id="wf-rec-sharpe"),
+                                                                    html.H6("Combined OOS Sharpe", className="text-muted"),
+                                                                    html.H4(id="wf-combined-sharpe"),
                                                                 ]
                                                             )
                                                         ),
-                                                        width=4,
+                                                        width=3,
+                                                    ),
+                                                    dbc.Col(
+                                                        dbc.Card(
+                                                            dbc.CardBody(
+                                                                [
+                                                                    html.H6("Sharpe Decay", className="text-muted"),
+                                                                    html.H4(id="wf-sharpe-decay"),
+                                                                ]
+                                                            )
+                                                        ),
+                                                        width=3,
                                                     ),
                                                 ],
                                                 className="mb-3",
                                             ),
-                                            dbc.Button(
-                                                [
-                                                    html.I(className="fas fa-check me-2"),
-                                                    "Apply Recommended Params",
+                                            # WF Interpretation
+                                            html.Div(id="wf-interpretation-div", className="mb-3"),
+                                            # Fold Results Table
+                                            html.H5("Fold Results", className="mb-3"),
+                                            html.Div(id="wf-fold-table-container", className="mb-4"),
+                                            # Recommended Parameters
+                                            html.Div(
+                                                id="wf-recommended-params-section",
+                                                children=[
+                                                    html.H5("Recommended Parameters", className="mb-3"),
+                                                    html.Div(id="wf-train-period-info", className="text-muted mb-2"),
+                                                    dbc.Row(
+                                                        [
+                                                            dbc.Col(
+                                                                dbc.Card(
+                                                                    dbc.CardBody(
+                                                                        [
+                                                                            html.H6("Windows (S/M/L)", className="text-muted"),
+                                                                            html.H5(id="wf-rec-windows"),
+                                                                        ]
+                                                                    )
+                                                                ),
+                                                                width=4,
+                                                            ),
+                                                            dbc.Col(
+                                                                dbc.Card(
+                                                                    dbc.CardBody(
+                                                                        [
+                                                                            html.H6("Weights (S/M/L)", className="text-muted"),
+                                                                            html.H5(id="wf-rec-weights"),
+                                                                        ]
+                                                                    )
+                                                                ),
+                                                                width=4,
+                                                            ),
+                                                            dbc.Col(
+                                                                dbc.Card(
+                                                                    dbc.CardBody(
+                                                                        [
+                                                                            html.H6("In-Sample Sharpe", className="text-muted"),
+                                                                            html.H5(id="wf-rec-sharpe"),
+                                                                        ]
+                                                                    )
+                                                                ),
+                                                                width=4,
+                                                            ),
+                                                        ],
+                                                        className="mb-3",
+                                                    ),
+                                                    dbc.Button(
+                                                        [html.I(className="fas fa-check me-2"), "Apply Recommended Params"],
+                                                        id="apply-wf-params-btn",
+                                                        color="success",
+                                                        className="mb-4",
+                                                    ),
                                                 ],
-                                                id="apply-wf-params-btn",
-                                                color="success",
-                                                className="mb-4",
                                             ),
+                                            # Parameter Stability
+                                            html.Div(
+                                                id="wf-stability-section",
+                                                children=[
+                                                    html.H5("Parameter Stability", className="mb-3"),
+                                                    html.Small(
+                                                        "How much do optimal parameters vary across folds? Lower std = more stable.",
+                                                        className="text-muted d-block mb-2",
+                                                    ),
+                                                    html.Div(id="wf-stability-table-container", className="mb-4"),
+                                                ],
+                                            ),
+                                            # Combined OOS NAV Chart
+                                            html.H5("Combined Out-of-Sample NAV", className="mb-3"),
+                                            html.Div(id="wf-oos-nav-info", className="text-muted mb-2"),
+                                            dcc.Graph(id="wf-oos-nav-chart", config={"displaylogo": False, "responsive": True}),
+                                            html.Div(id="wf-oos-sharpe-comparison", className="text-muted mb-3"),
                                         ],
                                     ),
-
-                                    # Parameter Stability
-                                    html.Div(
-                                        id="wf-stability-section",
-                                        children=[
-                                            html.H5("Parameter Stability", className="mb-3"),
-                                            html.Small(
-                                                "How much do optimal parameters vary across folds? Lower std = more stable.",
-                                                className="text-muted d-block mb-2",
-                                            ),
-                                            html.Div(id="wf-stability-table-container", className="mb-4"),
-                                        ],
-                                    ),
-
-                                    # Combined OOS NAV Chart
-                                    html.H5("Combined Out-of-Sample NAV", className="mb-3"),
-                                    html.Div(id="wf-oos-nav-info", className="text-muted mb-2"),
-                                    dcc.Graph(id="wf-oos-nav-chart", config={"displaylogo": False, "responsive": True}),
-                                    html.Div(id="wf-oos-sharpe-comparison", className="text-muted mb-3"),
                                 ],
                             ),
                         ],
