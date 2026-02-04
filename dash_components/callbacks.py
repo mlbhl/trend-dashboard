@@ -902,6 +902,25 @@ def register_callbacks(app):
         Output("walk-forward-store", "data"),
         Output("wf-result-div", "children"),
         Output("wf-progress-div", "children", allow_duplicate=True),
+        # Walk-forward results section outputs (directly updated from background callback)
+        Output("walk-forward-results-section", "style", allow_duplicate=True),
+        Output("wf-results-collapse", "is_open", allow_duplicate=True),
+        Output("wf-results-collapse-btn", "children", allow_duplicate=True),
+        Output("wf-results-title", "children"),
+        Output("wf-is-sharpe", "children"),
+        Output("wf-oos-sharpe", "children"),
+        Output("wf-combined-sharpe", "children"),
+        Output("wf-sharpe-decay", "children"),
+        Output("wf-interpretation-div", "children"),
+        Output("wf-fold-table-container", "children"),
+        Output("wf-train-period-info", "children"),
+        Output("wf-rec-windows", "children"),
+        Output("wf-rec-weights", "children"),
+        Output("wf-rec-sharpe", "children"),
+        Output("wf-stability-table-container", "children"),
+        Output("wf-oos-nav-info", "children"),
+        Output("wf-oos-nav-chart", "figure"),
+        Output("wf-oos-sharpe-comparison", "children"),
         Input("walk-forward-btn", "n_clicks"),
         State("start-date", "date"),
         State("ticker-store", "data"),
@@ -945,18 +964,40 @@ def register_callbacks(app):
         bm_ticker,
     ):
         """Run walk-forward optimization."""
+        # Default empty results for error cases
+        empty_results = (
+            {"display": "none"},  # section style
+            False,  # collapse is_open
+            "",  # collapse btn children
+            "",  # title
+            "",  # is_sharpe
+            "",  # oos_sharpe
+            "",  # combined_sharpe
+            "",  # decay
+            "",  # interpretation
+            "",  # fold_table
+            "",  # train_period_info
+            "",  # rec_windows
+            "",  # rec_weights
+            "",  # rec_sharpe
+            "",  # stability_table
+            "",  # oos_nav_info
+            go.Figure(),  # oos_nav_chart
+            "",  # sharpe_comparison
+        )
+
         if not n_clicks or not selected_tickers or len(selected_tickers) < 2:
             raise PreventUpdate
 
         # Validate train period
         train_months = int(train_months) if train_months else 36
         if train_months < 12:
-            return None, dbc.Alert("Train period must be at least 12 months.", color="danger"), ""
+            return (None, dbc.Alert("Train period must be at least 12 months.", color="danger"), "") + empty_results
 
         # Validate samples
         wf_samples = int(wf_samples) if wf_samples else 500
         if wf_samples < 100:
-            return None, dbc.Alert("Samples must be at least 100.", color="danger"), ""
+            return (None, dbc.Alert("Samples must be at least 100.", color="danger"), "") + empty_results
 
         # Load data
         dataset, _ = load_price_data(selected_tickers, start_date=start_date)
@@ -1010,7 +1051,7 @@ def register_callbacks(app):
         )
 
         if "error" in wf_result:
-            return None, dbc.Alert(wf_result["error"], color="danger"), ""
+            return (None, dbc.Alert(wf_result["error"], color="danger"), "") + empty_results
 
         # Store result (convert Series to JSON)
         wf_store = {
@@ -1053,46 +1094,15 @@ def register_callbacks(app):
             color="info",
         )
 
-        return wf_store, result_div, ""
-
-    @app.callback(
-        Output("walk-forward-results-section", "style"),
-        Output("wf-results-collapse", "is_open", allow_duplicate=True),
-        Output("wf-results-collapse-btn", "children", allow_duplicate=True),
-        Output("wf-results-title", "children"),
-        Output("wf-is-sharpe", "children"),
-        Output("wf-oos-sharpe", "children"),
-        Output("wf-combined-sharpe", "children"),
-        Output("wf-sharpe-decay", "children"),
-        Output("wf-interpretation-div", "children"),
-        Output("wf-fold-table-container", "children"),
-        Output("wf-train-period-info", "children"),
-        Output("wf-rec-windows", "children"),
-        Output("wf-rec-weights", "children"),
-        Output("wf-rec-sharpe", "children"),
-        Output("wf-stability-table-container", "children"),
-        Output("wf-oos-nav-info", "children"),
-        Output("wf-oos-nav-chart", "figure"),
-        Output("wf-oos-sharpe-comparison", "children"),
-        Input("walk-forward-store", "data"),
-        prevent_initial_call=True,
-    )
-    def update_walk_forward_results(wf_store):
-        """Update walk-forward results display."""
-        if not wf_store:
-            raise PreventUpdate
-
+        # ===== Build results section UI directly =====
         # Title
-        wf_type = wf_store["window_type"].capitalize()
         title = f"Walk-Forward Analysis ({wf_type} Window)"
 
         # Metrics
-        is_sharpe = f"{wf_store['is_sharpe_avg']:.2f}"
-        oos_sharpe = f"{wf_store['oos_sharpe_avg']:.2f}"
-        combined_sharpe = f"{wf_store['oos_sharpe']:.2f}"
-
-        decay = wf_store["sharpe_decay"]
-        decay_str = f"{decay:.2f}" if not np.isnan(decay) else "N/A"
+        is_sharpe_str = f"{wf_store['is_sharpe_avg']:.2f}"
+        oos_sharpe_str = f"{wf_store['oos_sharpe_avg']:.2f}"
+        combined_sharpe_str = f"{wf_store['oos_sharpe']:.2f}"
+        decay_display = f"{decay:.2f}" if not np.isnan(decay) else "N/A"
 
         # Interpretation
         if not np.isnan(decay):
@@ -1182,6 +1192,7 @@ def register_callbacks(app):
         oos_nav_info = f"NAV from chaining all out-of-sample test periods. BM = {bm_name}"
 
         fig_oos = go.Figure()
+        sharpe_comparison = ""
 
         if wf_store["combined_oos_nav"]:
             oos_nav = pd.read_json(wf_store["combined_oos_nav"], typ="series")
@@ -1238,32 +1249,29 @@ def register_callbacks(app):
                     oos_bm_sharpe = bm_daily_ret.mean() / bm_daily_ret.std() * np.sqrt(252)
                     excess = oos_sharpe_val - oos_bm_sharpe
                     sharpe_comparison = f"OOS Sharpe: Strategy {oos_sharpe_val:.2f} vs BM {oos_bm_sharpe:.2f} (Excess: {excess:+.2f})"
-                else:
-                    sharpe_comparison = ""
-            else:
-                sharpe_comparison = ""
-        else:
-            sharpe_comparison = ""
 
         return (
-            {"display": "block"},
-            True,  # Reset collapse to open
-            [html.I(className="fas fa-chevron-up me-1"), "Hide"],  # Reset button
-            title,
-            is_sharpe,
-            oos_sharpe,
-            combined_sharpe,
-            decay_str,
-            interpretation,
-            fold_table,
-            train_period_info,
-            rec_windows,
-            rec_weights,
-            rec_sharpe,
-            stability_table,
-            oos_nav_info,
-            fig_oos,
-            sharpe_comparison,
+            wf_store,
+            result_div,
+            "",  # wf-progress-div
+            {"display": "block"},  # walk-forward-results-section style
+            True,  # wf-results-collapse is_open
+            [html.I(className="fas fa-chevron-up me-1"), "Hide"],  # wf-results-collapse-btn
+            title,  # wf-results-title
+            is_sharpe_str,  # wf-is-sharpe
+            oos_sharpe_str,  # wf-oos-sharpe
+            combined_sharpe_str,  # wf-combined-sharpe
+            decay_display,  # wf-sharpe-decay
+            interpretation,  # wf-interpretation-div
+            fold_table,  # wf-fold-table-container
+            train_period_info,  # wf-train-period-info
+            rec_windows,  # wf-rec-windows
+            rec_weights,  # wf-rec-weights
+            rec_sharpe,  # wf-rec-sharpe
+            stability_table,  # wf-stability-table-container
+            oos_nav_info,  # wf-oos-nav-info
+            fig_oos,  # wf-oos-nav-chart
+            sharpe_comparison,  # wf-oos-sharpe-comparison
         )
 
     @app.callback(

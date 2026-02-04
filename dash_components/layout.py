@@ -656,7 +656,7 @@ def create_main_content():
     """Create the main content area."""
     return dbc.Col(
         [
-            html.H2("Momentum Rotation Strategy Dashboard", className="mb-4"),
+            html.H2("Trend Rotation Strategy Dashboard", className="mb-4"),
 
             # Loading indicator (shown while analysis is running)
             html.Div(
@@ -695,7 +695,7 @@ def create_main_content():
                             [
                                 html.H4("User Guide", className="card-title"),
                                 html.P(
-                                    "This dashboard analyzes momentum-based asset rotation strategies across ETFs.",
+                                    "This dashboard analyzes cross-sectional momentum strategies across ETFs.",
                                     className="card-text",
                                 ),
                                 html.Hr(),

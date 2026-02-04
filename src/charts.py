@@ -203,7 +203,7 @@ def create_holding_heatmap(
         colorscale='Blues',
         xgap=0.1,
         ygap=0.1,
-        hovertemplate='Ticker: %{y}<br>Date: %{x}<br>Weight: %{z:.2%}<extra></extra>',
+        hovertemplate='Ticker: %{y}<br>Date: %{x|%y.%m}<br>Weight: %{z:.2%}<extra></extra>',
         showscale=False,
     ))
 
