@@ -43,11 +43,11 @@ def generate_lookback_combinations() -> list[tuple[int, int, int]]:
 def generate_weight_combinations(step: int = 10) -> list[tuple[float, float, float]]:
     """Generate all weight combinations summing to 100% with given step."""
     combinations = []
-    values = list(range(10, 81, step))  # 10, 20, ..., 80
+    values = list(range(0, 101, step))  # 0, 10, ..., 100
     for w1 in values:
         for w2 in values:
             w3 = 100 - w1 - w2
-            if 10 <= w3 <= 80:
+            if 0 <= w3 <= 100:
                 combinations.append((w1 / 100, w2 / 100, w3 / 100))
     return combinations
 

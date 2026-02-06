@@ -10,7 +10,7 @@ import dash_bootstrap_components as dbc
 import plotly.graph_objects as go
 from pandas.tseries.offsets import BMonthBegin
 
-from src.config import ALPHA_LIST, WEIGHT_METHODS
+from src.config import TICKER_PRESETS, DEFAULT_PRESET, WEIGHT_METHODS
 from src.data import load_price_data
 from src.signals import generate_signal, get_signal_ranking
 from src.portfolio import (
@@ -278,20 +278,29 @@ def register_callbacks(app):
         Input("add-ticker-btn", "n_clicks"),
         Input("new-ticker-input", "n_submit"),
         Input("reset-tickers-btn", "n_clicks"),
+        Input("ticker-preset-select", "value"),
         Input({"type": "remove-ticker", "index": ALL}, "n_clicks"),
         State("new-ticker-input", "value"),
         State("ticker-store", "data"),
         prevent_initial_call=True,
     )
-    def manage_tickers(add_clicks, n_submit, reset_clicks, remove_clicks, new_ticker, current_tickers):
-        """Add, remove, or reset tickers."""
+    def manage_tickers(add_clicks, n_submit, reset_clicks, preset_value, remove_clicks, new_ticker, current_tickers):
+        """Add, remove, reset, or load preset tickers."""
         from dash import ctx
 
         triggered = ctx.triggered_id
 
-        # Reset to defaults
+        # Preset selection - load the selected preset
+        if triggered == "ticker-preset-select":
+            if preset_value and preset_value in TICKER_PRESETS:
+                return TICKER_PRESETS[preset_value].copy(), ""
+            raise PreventUpdate
+
+        # Reset to current preset
         if triggered == "reset-tickers-btn":
-            return ALPHA_LIST.copy(), ""
+            if preset_value and preset_value in TICKER_PRESETS:
+                return TICKER_PRESETS[preset_value].copy(), ""
+            return TICKER_PRESETS[DEFAULT_PRESET].copy(), ""
 
         # Remove ticker - only if actually clicked (n_clicks > 0)
         if isinstance(triggered, dict) and triggered.get("type") == "remove-ticker":
@@ -687,10 +696,25 @@ def register_callbacks(app):
         stats = summary_stats(navs)
         fig_stats = create_returns_table(stats)
 
-        # Stats DataFrame
+        # Stats DataFrame (formatted like the table)
+        formatted_stats = stats.copy()
+        pct_rows = ['cumulative', 'cagr', 'mean', 'vol', 'max', 'min', 'mdd']
+        for row in pct_rows:
+            if row in formatted_stats.index:
+                formatted_stats.loc[row] = formatted_stats.loc[row].apply(lambda x: f'{x:.1%}')
+        ratio_rows = ['sharpe', 'skew', 'kurt']
+        for row in ratio_rows:
+            if row in formatted_stats.index:
+                formatted_stats.loc[row] = formatted_stats.loc[row].apply(lambda x: f'{x:.2f}')
+        if 'nyears' in formatted_stats.index:
+            formatted_stats.loc['nyears'] = formatted_stats.loc['nyears'].apply(lambda x: f'{x:.1f}')
+        if 'nsamples' in formatted_stats.index:
+            formatted_stats.loc['nsamples'] = formatted_stats.loc['nsamples'].apply(lambda x: f'{int(x)}')
+
+        stats_df = formatted_stats.T.reset_index()
         stats_df_table = dash_table.DataTable(
-            data=stats.T.reset_index().to_dict("records"),
-            columns=[{"name": col, "id": col} for col in ["index"] + list(stats.columns)],
+            data=stats_df.to_dict("records"),
+            columns=[{"name": str(col), "id": str(col)} for col in stats_df.columns],
             style_cell={"textAlign": "center"},
             style_header={"fontWeight": "bold"},
         )

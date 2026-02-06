@@ -418,9 +418,13 @@ def create_returns_table(stats: pd.DataFrame) -> go.Figure:
         ),
     )])
 
+    # Calculate height based on number of rows
+    n_rows = len(formatted.index)
+    table_height = 35 + (n_rows * 30) + 20  # header + rows + padding
+
     fig.update_layout(
         margin=dict(l=0, r=0, t=0, b=0),
-        autosize=True,
+        height=table_height,
     )
 
     return fig

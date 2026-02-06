@@ -6,7 +6,8 @@ import pandas as pd
 from pandas.tseries.offsets import BMonthBegin
 
 from src.config import (
-    ALPHA_LIST,
+    TICKER_PRESETS,
+    DEFAULT_PRESET,
     TICKER_DESCRIPTIONS,
     DEFAULT_START_DATE,
     DEFAULT_BACKTEST_START_DATE,
@@ -127,7 +128,7 @@ if 'weight_mode' not in st.session_state:
     st.session_state['weight_mode'] = "Custom"
 
 # Combine default and custom tickers
-available_tickers = ALPHA_LIST.copy() + st.session_state['custom_tickers']
+available_tickers = TICKER_PRESETS[DEFAULT_PRESET].copy() + st.session_state['custom_tickers']
 
 # Initialize selected tickers (only on first load)
 if 'ticker_select' not in st.session_state:
@@ -135,7 +136,7 @@ if 'ticker_select' not in st.session_state:
 
 # Callbacks (executed before widgets render)
 def reset_tickers():
-    st.session_state['ticker_select'] = ALPHA_LIST.copy()
+    st.session_state['ticker_select'] = TICKER_PRESETS[DEFAULT_PRESET].copy()
     st.session_state['custom_tickers'] = []
     st.session_state['new_ticker_input'] = ""
 

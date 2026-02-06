@@ -5,7 +5,8 @@ import dash_bootstrap_components as dbc
 from dash import dcc, html
 
 from src.config import (
-    ALPHA_LIST,
+    TICKER_PRESETS,
+    DEFAULT_PRESET,
     DEFAULT_START_DATE,
     DEFAULT_BACKTEST_START_DATE,
     DEFAULT_SHORT_WINDOW,
@@ -52,8 +53,16 @@ def create_sidebar_content():
 
             # Ticker Selection Section
             html.H6("Ticker Selection", className="text-muted mb-2"),
+            label_with_help("Preset", "help-preset", "Select a predefined ticker set. You can add or remove tickers after selection."),
+            dcc.Dropdown(
+                id="ticker-preset-select",
+                options=[{"label": k, "value": k} for k in TICKER_PRESETS.keys()],
+                value=DEFAULT_PRESET,
+                clearable=False,
+                className="mb-2",
+            ),
             label_with_help("Tickers", "help-tickers", "Select ETFs to include in the analysis. Click X to remove."),
-            dcc.Store(id="ticker-store", data=ALPHA_LIST.copy()),
+            dcc.Store(id="ticker-store", data=TICKER_PRESETS[DEFAULT_PRESET].copy()),
             html.Div(id="ticker-tags", className="mb-2", style={"display": "flex", "flexWrap": "wrap", "gap": "4px"}),
             label_with_help("Add Ticker", "help-add-ticker", "Enter a ticker symbol and press Enter to add."),
             dbc.InputGroup(
@@ -73,7 +82,7 @@ def create_sidebar_content():
                 className="mb-2",
             ),
             dbc.Button(
-                "Reset to Default",
+                "Reset to Preset",
                 id="reset-tickers-btn",
                 color="link",
                 size="sm",
@@ -425,7 +434,7 @@ def create_sidebar_content():
                         style={"cursor": "pointer", "fontSize": "0.8rem"},
                     ),
                     dbc.Tooltip(
-                        "Full Grid evaluates all 2,016 parameter combinations. Random Grid samples a subset to reduce computation time.",
+                        "Full Grid evaluates all 3,696 parameter combinations. Random Grid samples a subset to reduce computation time.",
                         target="help-opt-mode",
                         placement="right",
                     ),
@@ -439,13 +448,13 @@ def create_sidebar_content():
                         [
                             dbc.Col(
                                 [
-                                    label_with_help("Samples", "help-opt-samples", "Number of random parameter combinations to test (100 to 2,016).", size="sm"),
+                                    label_with_help("Samples", "help-opt-samples", "Number of random parameter combinations to test (100 to 3,696).", size="sm"),
                                     dbc.Input(
                                         id="opt-samples-input",
                                         type="number",
                                         value=500,
                                         min=1,
-                                        max=2016,
+                                        max=3696,
                                         size="sm",
                                     ),
                                     html.Div(id="opt-samples-warning"),
@@ -569,13 +578,13 @@ def create_sidebar_content():
                         size="sm",
                         className="mb-2",
                     ),
-                    label_with_help("Samples per Fold", "help-wf-samples", "Number of random parameter combinations to test per fold (100 to 2,016).", size="sm"),
+                    label_with_help("Samples per Fold", "help-wf-samples", "Number of random parameter combinations to test per fold (100 to 3,696).", size="sm"),
                     dbc.Input(
                         id="wf-samples-input",
                         type="number",
                         value=500,
                         min=1,
-                        max=2016,
+                        max=3696,
                         step=1,
                         size="sm",
                         className="mb-1",
@@ -1042,6 +1051,8 @@ def create_main_content():
                                     ),
                                 ],
                             ),
+                            # Bottom spacing
+                            html.Div(style={"height": "100px"}),
                         ],
                     ),
                 ],
