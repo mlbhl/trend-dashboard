@@ -81,12 +81,24 @@ def create_sidebar_content():
                 ],
                 className="mb-2",
             ),
-            dbc.Button(
-                "Reset to Preset",
-                id="reset-tickers-btn",
-                color="link",
-                size="sm",
-                className="mb-2 p-0",
+            html.Div(
+                [
+                    dbc.Button(
+                        "Reset to Preset",
+                        id="reset-tickers-btn",
+                        color="link",
+                        size="sm",
+                        className="p-0 me-3",
+                    ),
+                    dbc.Button(
+                        "Clear All",
+                        id="clear-tickers-btn",
+                        color="link",
+                        size="sm",
+                        className="p-0",
+                    ),
+                ],
+                className="d-flex mb-2",
             ),
             label_with_help("Min Valid Tickers", "help-thresh", "Minimum number of valid tickers required for the analysis."),
             dcc.Slider(

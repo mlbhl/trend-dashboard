@@ -278,14 +278,15 @@ def register_callbacks(app):
         Input("add-ticker-btn", "n_clicks"),
         Input("new-ticker-input", "n_submit"),
         Input("reset-tickers-btn", "n_clicks"),
+        Input("clear-tickers-btn", "n_clicks"),
         Input("ticker-preset-select", "value"),
         Input({"type": "remove-ticker", "index": ALL}, "n_clicks"),
         State("new-ticker-input", "value"),
         State("ticker-store", "data"),
         prevent_initial_call=True,
     )
-    def manage_tickers(add_clicks, n_submit, reset_clicks, preset_value, remove_clicks, new_ticker, current_tickers):
-        """Add, remove, reset, or load preset tickers."""
+    def manage_tickers(add_clicks, n_submit, reset_clicks, clear_clicks, preset_value, remove_clicks, new_ticker, current_tickers):
+        """Add, remove, reset, clear, or load preset tickers."""
         from dash import ctx
 
         triggered = ctx.triggered_id
@@ -301,6 +302,10 @@ def register_callbacks(app):
             if preset_value and preset_value in TICKER_PRESETS:
                 return TICKER_PRESETS[preset_value].copy(), ""
             return TICKER_PRESETS[DEFAULT_PRESET].copy(), ""
+
+        # Clear all tickers
+        if triggered == "clear-tickers-btn":
+            return [], ""
 
         # Remove ticker - only if actually clicked (n_clicks > 0)
         if isinstance(triggered, dict) and triggered.get("type") == "remove-ticker":
