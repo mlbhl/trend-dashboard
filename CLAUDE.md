@@ -8,17 +8,10 @@ Trend Dashboard is a Python Dash application for analyzing momentum-based rotati
 
 ## Running the Application
 
-**Dash (Production):**
 ```bash
 gunicorn app:server
 ```
 Runs on port 8000 by default.
-
-**Streamlit (Legacy):**
-```bash
-streamlit run streamlit_app.py
-```
-Runs on port 8501 by default.
 
 ## Architecture
 
@@ -38,11 +31,10 @@ Price Data (Yahoo Finance) → Signal Generation → Portfolio Weights → Backt
 
 **Dash Components (`dash_components/`):**
 - `layout.py` - UI layout with sidebar controls and main content tabs
-- `callbacks.py` - All Dash callbacks for interactivity and data processing
+- `callbacks.py` - All Dash callbacks for interactivity and data processing; includes `_build_composite_bm()` for Custom BM
 
-**Entry Points:**
-- `app.py` - Dash app (main), uses gunicorn for production
-- `streamlit_app.py` - Streamlit app (legacy)
+**Entry Point:**
+- `app.py` - Dash app, uses gunicorn for production
 
 ## Key Patterns
 
