@@ -46,6 +46,46 @@ def label_with_help(label_text: str, tooltip_id: str, tooltip_text: str, size: s
     )
 
 
+def _create_bm_row(index: int):
+    """Create a single benchmark ticker/weight row for the Custom BM UI."""
+    return html.Div(
+        id={"type": "bm-row", "index": index},
+        children=[
+            dbc.InputGroup(
+                [
+                    dbc.Input(
+                        id={"type": "bm-row-ticker", "index": index},
+                        placeholder="e.g., SPY",
+                        type="text",
+                        style={"flex": "2"},
+                    ),
+                    dbc.Input(
+                        id={"type": "bm-row-weight", "index": index},
+                        placeholder="%",
+                        type="number",
+                        min=0,
+                        max=100,
+                        step=1,
+                        value=100,
+                        style={"flex": "1"},
+                    ),
+                    dbc.InputGroupText("%", style={"padding": "0.25rem 0.5rem"}),
+                    dbc.Button(
+                        html.I(className="fas fa-times"),
+                        id={"type": "bm-row-delete", "index": index},
+                        color="danger",
+                        outline=True,
+                        size="sm",
+                        style={"padding": "0.25rem 0.5rem"},
+                    ),
+                ],
+                size="sm",
+                className="mb-1",
+            ),
+        ],
+    )
+
+
 def create_sidebar_content():
     """Create the sidebar content (controls only, no wrapper)."""
     return [
@@ -326,14 +366,19 @@ def create_sidebar_content():
                 clearable=False,
                 className="mb-2",
             ),
-            label_with_help("Transaction Cost (one-way)", "help-tcost", "One-way transaction cost per trade, entered in decimal form. Applied to both buys and sells (e.g., 0.001 = 0.1%)."),
-            dbc.Input(
-                id="tcost-input",
-                type="number",
-                min=0,
-                max=0.01,
-                step=0.0005,
-                value=0.0,
+            label_with_help("Transaction Cost (one-way)", "help-tcost", "One-way transaction cost per trade in %. 5bp = 0.05%. Applied to both buys and sells."),
+            dbc.InputGroup(
+                [
+                    dbc.Input(
+                        id="tcost-input",
+                        type="number",
+                        min=0,
+                        max=1.0,
+                        step=0.05,
+                        value=0.00,
+                    ),
+                    dbc.InputGroupText("%"),
+                ],
                 className="mb-3",
             ),
             html.Hr(),
@@ -346,7 +391,7 @@ def create_sidebar_content():
                         id="bm-type-radio",
                         options=[
                             {"label": "Equal Weight", "value": "equal_weight"},
-                            {"label": "Custom Ticker", "value": "custom"},
+                            {"label": "Custom BM", "value": "custom"},
                         ],
                         value="equal_weight",
                         inline=True,
@@ -358,35 +403,39 @@ def create_sidebar_content():
                         style={"cursor": "pointer", "fontSize": "0.8rem"},
                     ),
                     dbc.Tooltip(
-                        "Equal Weight assigns equal weights across all selected tickers.",
+                        "Equal Weight assigns equal weights across all selected tickers. Custom BM builds a composite benchmark from multiple tickers with custom weights.",
                         target="help-bm-type",
                         placement="right",
                     ),
                 ],
                 className="mb-2",
             ),
+            dcc.Store(id="bm-config-store", data=[]),
             html.Div(
                 id="custom-bm-div",
                 children=[
-                    dbc.InputGroup(
-                        [
-                            dbc.Input(
-                                id="bm-ticker-input",
-                                placeholder="e.g., SPY",
-                                type="text",
-                                #value="SPY",
-                                debounce=True,  # Triggers on Enter
-                            ),
-                            dbc.Button(
-                                [html.I(className="fas fa-check")],
-                                id="apply-bm-ticker-btn",
-                                color="success",
-                                outline=True,
-                            ),
+                    html.Div(
+                        id="bm-rows-container",
+                        children=[
+                            _create_bm_row(0),
                         ],
-                        className="mb-1",
                     ),
-                    dbc.FormText("Enter a ticker symbol and press Enter to apply.", className="mb-2"),
+                    dbc.Button(
+                        [html.I(className="fas fa-plus me-1"), "Add"],
+                        id="bm-add-row-btn",
+                        color="secondary",
+                        outline=True,
+                        size="sm",
+                        className="mb-2",
+                    ),
+                    dbc.Button(
+                        [html.I(className="fas fa-check me-1"), "Apply"],
+                        id="apply-bm-btn",
+                        color="success",
+                        outline=True,
+                        size="sm",
+                        className="mb-2 ms-2",
+                    ),
                     html.Div(id="bm-ticker-status", className="mb-2"),
                 ],
                 style={"display": "none"},

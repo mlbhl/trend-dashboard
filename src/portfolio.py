@@ -218,7 +218,7 @@ def run_quantile_backtest(
 
     # Shift weights to next month beginning
     bm_wgt.index = bm_wgt.index + BMonthBegin(1)
-    bm_nav, _ = backtest(price, bm_wgt, capital=capital, tcost=tcost)
+    bm_nav, _ = backtest(price, bm_wgt, capital=capital, tcost=0)
     bm_nav.name = 'BM'
 
     q_nav = {}
@@ -260,7 +260,7 @@ def run_top_k_backtest(
 
     # Shift weights to next month beginning
     bm_wgt.index = bm_wgt.index + BMonthBegin(1)
-    bm_nav, _ = backtest(price, bm_wgt, capital=capital, tcost=tcost)
+    bm_nav, _ = backtest(price, bm_wgt, capital=capital, tcost=0)
 
     top_wgt.index = top_wgt.index + BMonthBegin(1)
     top_nav, turnover = backtest(price, top_wgt, capital=capital, tcost=tcost)

@@ -29,6 +29,69 @@ from src.charts import (
     create_returns_table,
 )
 from src.optimizer import optimize_sharpe, walk_forward_optimize
+from dash_components.layout import _create_bm_row
+
+
+def _build_composite_bm(bm_config: list, start_date: str) -> tuple:
+    """Build a composite benchmark from multiple tickers with weights.
+
+    Args:
+        bm_config: List of dicts [{"ticker": "SPY", "weight": 60}, ...]
+        start_date: Start date for price data download.
+
+    Returns:
+        (bm_series, bm_label, warnings) where bm_series is a pd.Series of
+        composite price, bm_label is a display string, and warnings is a list
+        of warning strings for missing tickers.
+    """
+    if not bm_config:
+        return None, None, []
+
+    tickers = [row["ticker"].strip().upper() for row in bm_config if row.get("ticker")]
+    weights = [float(row.get("weight", 0)) for row in bm_config if row.get("ticker")]
+
+    if not tickers:
+        return None, None, []
+
+    # Convert percentage weights to decimals (e.g. 60 → 0.6)
+    # No normalization: <100% implies cash, >100% implies leverage
+    dec_weights = [w / 100.0 for w in weights]
+
+    # Load all ticker data at once
+    all_data, missing = load_price_data(tickers, start_date=start_date)
+
+    warn_msgs = []
+    if missing:
+        warn_msgs.append(f"BM ticker(s) not found: {', '.join(missing)}")
+
+    # Filter to found tickers and their weights
+    found = []
+    found_weights = []
+    for t, w in zip(tickers, dec_weights):
+        if t in all_data.columns:
+            found.append(t)
+            found_weights.append(w)
+    if not found:
+        return None, None, warn_msgs
+
+    prices = all_data[found]
+    daily_ret = prices.pct_change().dropna()
+    if daily_ret.empty:
+        return None, None, warn_msgs
+
+    # Weighted daily return → cumulative price series
+    composite_ret = daily_ret.multiply(found_weights, axis=1).sum(axis=1)
+    composite_price = (1 + composite_ret).cumprod()
+    composite_price.iloc[0] = 1.0  # set initial value
+
+    # Build label from original config (only found tickers with original weights)
+    label_parts = []
+    for t, w in zip(tickers, weights):
+        if t in all_data.columns:
+            label_parts.append(f"{t} {w:.0f}%")
+    bm_label = " + ".join(label_parts)
+
+    return composite_price, bm_label, warn_msgs
 
 
 def register_callbacks(app):
@@ -71,24 +134,83 @@ def register_callbacks(app):
         return {"display": "none"}
 
     @app.callback(
-        Output("bm-ticker-status", "children"),
-        Input("bm-ticker-input", "value"),
-        Input("apply-bm-ticker-btn", "n_clicks"),
-        State("bm-ticker-input", "value"),
+        Output("bm-rows-container", "children"),
+        Input("bm-add-row-btn", "n_clicks"),
+        Input({"type": "bm-row-delete", "index": ALL}, "n_clicks"),
+        State("bm-rows-container", "children"),
         prevent_initial_call=True,
     )
-    def update_bm_ticker_status(input_value, n_clicks, ticker_value):
-        """Show the currently set benchmark ticker."""
+    def manage_bm_rows(add_clicks, delete_clicks, current_rows):
+        """Add or delete benchmark ticker rows."""
         from dash import ctx
 
-        ticker = ticker_value.strip().upper() if ticker_value else ""
-        if ticker:
-            return dbc.Alert(
-                [html.I(className="fas fa-check-circle me-2"), f"Benchmark: {ticker}"],
-                color="success",
+        triggered = ctx.triggered_id
+
+        if not current_rows:
+            current_rows = []
+
+        # Add row
+        if triggered == "bm-add-row-btn":
+            # Find next index (max existing + 1)
+            existing_indices = []
+            for row in current_rows:
+                if isinstance(row, dict) and "props" in row:
+                    row_id = row["props"].get("id", {})
+                    if isinstance(row_id, dict):
+                        existing_indices.append(row_id.get("index", 0))
+            next_index = max(existing_indices, default=-1) + 1
+            current_rows.append(_create_bm_row(next_index))
+            return current_rows
+
+        # Delete row
+        if isinstance(triggered, dict) and triggered.get("type") == "bm-row-delete":
+            delete_index = triggered["index"]
+            # Check that the delete button was actually clicked
+            for i, row in enumerate(current_rows):
+                if isinstance(row, dict) and "props" in row:
+                    row_id = row["props"].get("id", {})
+                    if isinstance(row_id, dict) and row_id.get("index") == delete_index:
+                        if delete_clicks and i < len(delete_clicks) and delete_clicks[i]:
+                            new_rows = [r for j, r in enumerate(current_rows) if j != i]
+                            return new_rows if new_rows else [_create_bm_row(0)]
+                        break
+            raise PreventUpdate
+
+        raise PreventUpdate
+
+    @app.callback(
+        Output("bm-config-store", "data"),
+        Output("bm-ticker-status", "children"),
+        Input("apply-bm-btn", "n_clicks"),
+        State({"type": "bm-row-ticker", "index": ALL}, "value"),
+        State({"type": "bm-row-weight", "index": ALL}, "value"),
+        prevent_initial_call=True,
+    )
+    def apply_bm_config(n_clicks, tickers, weights):
+        """Apply benchmark config from all rows into bm-config-store."""
+        if not n_clicks:
+            raise PreventUpdate
+
+        config = []
+        for t, w in zip(tickers or [], weights or []):
+            ticker = t.strip().upper() if t else ""
+            weight = float(w) if w is not None else 0
+            if ticker and weight > 0:
+                config.append({"ticker": ticker, "weight": weight})
+
+        if not config:
+            return [], dbc.Alert(
+                [html.I(className="fas fa-exclamation-triangle me-2"), "No valid tickers entered."],
+                color="warning",
                 className="py-2 mb-0",
             )
-        return ""
+
+        label = " + ".join(f"{c['ticker']} {c['weight']:.0f}%" for c in config)
+        return config, dbc.Alert(
+            [html.I(className="fas fa-check-circle me-2"), f"Benchmark: {label}"],
+            color="success",
+            className="py-2 mb-0",
+        )
 
     @app.callback(
         Output("top-k-div", "style"),
@@ -364,7 +486,7 @@ def register_callbacks(app):
         State("weight-method-select", "value"),
         State("tcost-input", "value"),
         State("bm-type-radio", "value"),
-        State("bm-ticker-input", "value"),
+        State("bm-config-store", "data"),
         prevent_initial_call=True,
         background=True,
         running=[
@@ -393,7 +515,7 @@ def register_callbacks(app):
         weight_method,
         tcost,
         bm_type,
-        bm_ticker,
+        bm_config,
     ):
         """Run the main analysis."""
         if not n_clicks or not selected_tickers or len(selected_tickers) < 2:
@@ -411,8 +533,8 @@ def register_callbacks(app):
         if select_all:
             top_k = None
 
-        # Ensure tcost is a number
-        tcost = float(tcost) if tcost else 0.0
+        # Ensure tcost is a number (input is in %, convert to decimal)
+        tcost = float(tcost) / 100.0 if tcost else 0.0
 
         # Load data
         dataset, missing = load_price_data(selected_tickers, start_date=start_date)
@@ -444,23 +566,28 @@ def register_callbacks(app):
 
         # Load benchmark data if custom
         bm_data = None
-        bm_missing = False
-        custom_bm_ticker = None
-        if bm_type == "custom" and bm_ticker:
-            custom_bm_ticker = bm_ticker.strip().upper()
-            if custom_bm_ticker not in dataset.columns:
-                bm_dataset, _ = load_price_data([custom_bm_ticker], start_date=start_date)
-                if custom_bm_ticker in bm_dataset.columns:
-                    bm_data = bm_dataset[custom_bm_ticker]
-                else:
-                    bm_missing = True
-                    warnings.append(
-                        dbc.Alert(
-                            [html.I(className="fas fa-exclamation-triangle me-2"), f"Benchmark ticker '{custom_bm_ticker}' not found. Using Equal Weight BM instead."],
-                            color="warning",
-                            dismissable=True,
-                        )
+        custom_bm_label = None
+        if bm_type == "custom" and bm_config:
+            bm_series, bm_label, bm_warns = _build_composite_bm(bm_config, start_date)
+            for w in bm_warns:
+                warnings.append(
+                    dbc.Alert(
+                        [html.I(className="fas fa-exclamation-triangle me-2"), w],
+                        color="warning",
+                        dismissable=True,
                     )
+                )
+            if bm_series is not None:
+                bm_data = bm_series
+                custom_bm_label = bm_label
+            else:
+                warnings.append(
+                    dbc.Alert(
+                        [html.I(className="fas fa-exclamation-triangle me-2"), "Custom BM could not be built. Using Equal Weight BM instead."],
+                        color="warning",
+                        dismissable=True,
+                    )
+                )
 
         # Generate signal
         signal = generate_signal(
@@ -506,10 +633,10 @@ def register_callbacks(app):
             weights_data = {q: wgt.to_json(date_format="iso") for q, wgt in q_wgts.items()}
 
         # Handle benchmark
-        if custom_bm_ticker and bm_data is not None:
+        if custom_bm_label and bm_data is not None:
             bm_aligned = bm_data.reindex(navs.index).ffill().bfill()
             bm_nav = bm_aligned / bm_aligned.iloc[0] * 1000
-            bm_nav.name = custom_bm_ticker
+            bm_nav.name = custom_bm_label
             navs["BM"] = bm_nav
         else:
             navs["BM"] = universe_bm_nav
@@ -539,7 +666,7 @@ def register_callbacks(app):
             "tcost": tcost,
             "strategy_type": strategy_type,
             "backtest_start_date": str(backtest_start_date),
-            "custom_bm_ticker": custom_bm_ticker if bm_type == "custom" else None,
+            "custom_bm_label": custom_bm_label if bm_type == "custom" else None,
             "display_start": display_start.strftime("%Y-%m-%d"),
             "display_end": navs_display.index[-1].strftime("%Y-%m-%d"),
             "data_end": dataset.index[-1].strftime("%Y-%m-%d"),
@@ -848,7 +975,7 @@ def register_callbacks(app):
         # Handle parameters
         if select_all:
             top_k = None
-        tcost = float(tcost) if tcost else 0.0
+        tcost = float(tcost) / 100.0 if tcost else 0.0
         # Parse seed from text input
         try:
             opt_seed = int(opt_seed) if opt_seed and str(opt_seed).strip().isdigit() else None
@@ -965,7 +1092,7 @@ def register_callbacks(app):
         State("wf-samples-input", "value"),
         State("wf-seed-input", "value"),
         State("bm-type-radio", "value"),
-        State("bm-ticker-input", "value"),
+        State("bm-config-store", "data"),
         background=True,
         running=[
             (Output("wf-progress-div", "children"), dbc.Progress(value=0, striped=True, animated=True), ""),
@@ -990,7 +1117,7 @@ def register_callbacks(app):
         wf_samples,
         wf_seed,
         bm_type,
-        bm_ticker,
+        bm_config,
     ):
         """Run walk-forward optimization."""
         # Default empty results for error cases
@@ -1033,18 +1160,17 @@ def register_callbacks(app):
 
         # Load benchmark data if custom
         bm_data = None
-        wf_bm_ticker = None
-        if bm_type == "custom" and bm_ticker:
-            wf_bm_ticker = bm_ticker.strip().upper()
-            if wf_bm_ticker not in dataset.columns:
-                bm_dataset, _ = load_price_data([wf_bm_ticker], start_date=start_date)
-                if wf_bm_ticker in bm_dataset.columns:
-                    bm_data = bm_dataset[wf_bm_ticker]
+        wf_bm_label = None
+        if bm_type == "custom" and bm_config:
+            bm_series, bm_label, _ = _build_composite_bm(bm_config, start_date)
+            if bm_series is not None:
+                bm_data = bm_series
+                wf_bm_label = bm_label
 
         # Handle parameters
         if select_all:
             top_k = None
-        tcost = float(tcost) if tcost else 0.0
+        tcost = float(tcost) / 100.0 if tcost else 0.0
         # Parse seed from text input
         try:
             wf_seed = int(wf_seed) if wf_seed and str(wf_seed).strip().isdigit() else None
@@ -1074,7 +1200,7 @@ def register_callbacks(app):
             thresh=thresh,
             n_samples=wf_samples,
             seed=wf_seed,
-            bm_ticker=wf_bm_ticker,
+            bm_ticker=wf_bm_label,
             bm_data=bm_data,
             progress_callback=update_progress,
         )
@@ -1100,7 +1226,7 @@ def register_callbacks(app):
             "combined_oos_nav": wf_result["combined_oos_nav"].to_json(date_format="iso") if wf_result["combined_oos_nav"] is not None else None,
             "combined_oos_bm_nav": wf_result["combined_oos_bm_nav"].to_json(date_format="iso") if wf_result["combined_oos_bm_nav"] is not None else None,
             "_bm_type": bm_type,
-            "_bm_ticker": wf_bm_ticker if bm_type == "custom" else None,
+            "_bm_ticker": wf_bm_label if bm_type == "custom" else None,
         }
 
         decay = wf_result["sharpe_decay"]

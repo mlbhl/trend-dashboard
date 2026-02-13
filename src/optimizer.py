@@ -560,10 +560,10 @@ def walk_forward_optimize(
                 end_date=str(fold['test_end'].date()),
             )
         else:
-            # Equal weight benchmark
+            # Equal weight benchmark (no transaction cost for BM)
             oos_bm_nav = fast_benchmark_nav(
                 price,
-                tcost=tcost,
+                tcost=0,
                 start_date=str(fold['test_start'].date()),
                 end_date=str(fold['test_end'].date()),
             )
