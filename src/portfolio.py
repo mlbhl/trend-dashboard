@@ -7,6 +7,35 @@ from pandas.tseries.offsets import BMonthBegin
 from .signals import calc_vol
 
 
+def compute_weight_core(
+    price: pd.DataFrame,
+    signal: pd.DataFrame,
+    core_tickers: list[str],
+    core_weights: list[float],
+) -> pd.DataFrame:
+    """
+    Compute fixed monthly weights for core holdings.
+
+    Args:
+        price: Daily price DataFrame (used only for column alignment)
+        signal: Signal DataFrame (used for month-end index alignment)
+        core_tickers: List of ticker symbols for core holdings
+        core_weights: List of weights (will be normalized to sum to 1)
+
+    Returns:
+        DataFrame of core weights indexed by signal dates, columns matching price
+    """
+    total = sum(core_weights)
+    norm_weights = [w / total for w in core_weights] if total > 0 else core_weights
+
+    wgt = pd.DataFrame(0.0, index=signal.index, columns=price.columns)
+    for ticker, w in zip(core_tickers, norm_weights):
+        if ticker in wgt.columns:
+            wgt[ticker] = w
+
+    return wgt
+
+
 def compute_weight_top_k(
     price: pd.DataFrame,
     signal: pd.DataFrame,

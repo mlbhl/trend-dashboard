@@ -75,6 +75,54 @@ def combine_signals(
     return sig
 
 
+def _blend_core_weights(
+    wgt: pd.DataFrame,
+    price: pd.DataFrame,
+    core_config: dict,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """
+    Blend satellite weights with core weights for core-satellite mode.
+
+    Args:
+        wgt: Satellite weight DataFrame (signal index, before BMonthBegin shift)
+        price: Price DataFrame (may need column expansion for core tickers)
+        core_config: Dict with 'tickers', 'weights', 'ratio'
+
+    Returns:
+        (blended_wgt, expanded_price) with aligned columns
+    """
+    core_tickers = core_config["tickers"]
+    core_weights = core_config["weights"]
+    core_ratio = core_config["ratio"]
+
+    # Normalize core weights
+    total = sum(core_weights)
+    norm_weights = [w / total for w in core_weights] if total > 0 else core_weights
+
+    # Expand columns to include core tickers
+    all_cols = list(price.columns)
+    for t in core_tickers:
+        if t not in all_cols:
+            all_cols.append(t)
+
+    # Expand satellite weights
+    sat_expanded = wgt.reindex(columns=all_cols, fill_value=0.0)
+
+    # Build core weights (constant across all dates)
+    core_wgt = pd.DataFrame(0.0, index=wgt.index, columns=all_cols)
+    for t, w in zip(core_tickers, norm_weights):
+        if t in core_wgt.columns:
+            core_wgt[t] = w
+
+    # Blend
+    blended = core_ratio * core_wgt + (1 - core_ratio) * sat_expanded
+
+    # Expand price if needed
+    expanded_price = price.reindex(columns=all_cols)
+
+    return blended, expanded_price
+
+
 def fast_backtest_sharpe(
     price: pd.DataFrame,
     signal: pd.DataFrame,
@@ -83,6 +131,7 @@ def fast_backtest_sharpe(
     weight_method: str = "equal",
     tcost: float = 0.0,
     start_date: str | None = None,
+    core_config: dict | None = None,
 ) -> float:
     """
     Fast backtest returning only Sharpe ratio.
@@ -117,6 +166,10 @@ def fast_backtest_sharpe(
             w = pd.Series(1.0 / len(selected), index=selected)
 
         wgt.loc[date, selected] = w
+
+    # Blend with core weights if core-satellite mode
+    if core_config:
+        wgt, price = _blend_core_weights(wgt, price, core_config)
 
     # Shift weights to next month
     wgt.index = wgt.index + BMonthBegin(1)
@@ -198,6 +251,7 @@ def optimize_sharpe_period(
     n_samples: int | None = None,
     seed: int | None = None,
     progress_callback=None,
+    core_config: dict | None = None,
 ) -> dict:
     """
     Optimize parameters for a specific period using precomputed data.
@@ -246,6 +300,7 @@ def optimize_sharpe_period(
             weight_method=weight_method,
             tcost=tcost,
             start_date=start_date,
+            core_config=core_config,
         )
 
         if np.isnan(sharpe):
@@ -285,6 +340,7 @@ def optimize_sharpe(
     n_samples: int | None = None,
     seed: int | None = None,
     progress_callback=None,
+    core_config: dict | None = None,
 ) -> dict:
     """
     Find optimal lookback windows and weights to maximize Sharpe ratio.
@@ -354,6 +410,7 @@ def optimize_sharpe(
             weight_method=weight_method,
             tcost=tcost,
             start_date=start_date,
+            core_config=core_config,
         )
 
         if np.isnan(sharpe):
@@ -410,6 +467,7 @@ def walk_forward_optimize(
     bm_ticker: str | None = None,
     bm_data: pd.Series | None = None,
     progress_callback=None,
+    core_config: dict | None = None,
 ) -> dict:
     """
     Walk-forward optimization to reduce overfitting.
@@ -525,6 +583,7 @@ def walk_forward_optimize(
             n_samples=n_samples,
             seed=fold_seed,
             progress_callback=fold_progress,
+            core_config=core_config,
         )
 
         if opt_result['best_params'] is None:
@@ -549,6 +608,7 @@ def walk_forward_optimize(
             tcost=tcost,
             start_date=str(fold['test_start'].date()),
             end_date=str(fold['test_end'].date()),
+            core_config=core_config,
         )
 
         # Get OOS Benchmark NAV for this fold
@@ -566,6 +626,7 @@ def walk_forward_optimize(
                 tcost=0,
                 start_date=str(fold['test_start'].date()),
                 end_date=str(fold['test_end'].date()),
+                core_config=core_config,
             )
 
         if oos_nav is not None and len(oos_nav) > 0:
@@ -631,6 +692,7 @@ def walk_forward_optimize(
         n_samples=n_samples,
         seed=(seed + total_folds) if seed is not None else None,
         progress_callback=final_progress,
+        core_config=core_config,
     )
 
     final_params = final_result['best_params']
@@ -676,6 +738,7 @@ def fast_backtest_nav(
     tcost: float = 0.0,
     start_date: str | None = None,
     end_date: str | None = None,
+    core_config: dict | None = None,
 ) -> pd.Series | None:
     """
     Fast backtest returning NAV series for a specific period.
@@ -709,6 +772,10 @@ def fast_backtest_nav(
             w = pd.Series(1.0 / len(selected), index=selected)
 
         wgt.loc[date, selected] = w
+
+    # Blend with core weights if core-satellite mode
+    if core_config:
+        wgt, price = _blend_core_weights(wgt, price, core_config)
 
     wgt.index = wgt.index + BMonthBegin(1)
 
@@ -827,6 +894,7 @@ def fast_benchmark_nav(
     tcost: float = 0.0,
     start_date: str | None = None,
     end_date: str | None = None,
+    core_config: dict | None = None,
 ) -> pd.Series | None:
     """
     Compute equal-weight benchmark NAV for a specific period.
@@ -841,6 +909,10 @@ def fast_benchmark_nav(
         valid = price_m.loc[date].dropna().index
         if len(valid) > 0:
             wgt.loc[date, valid] = 1.0 / len(valid)
+
+    # Blend with core weights if core-satellite mode
+    if core_config:
+        wgt, price = _blend_core_weights(wgt, price, core_config)
 
     # Shift weights to next month beginning
     wgt.index = wgt.index + BMonthBegin(1)

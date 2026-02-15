@@ -46,6 +46,47 @@ def label_with_help(label_text: str, tooltip_id: str, tooltip_text: str, size: s
     )
 
 
+def _create_core_row(index: int):
+    """Create a single core ticker/weight row for the Core-Satellite UI."""
+    return html.Div(
+        id={"type": "core-row", "index": index},
+        children=[
+            dbc.InputGroup(
+                [
+                    dbc.Input(
+                        id={"type": "core-row-ticker", "index": index},
+                        placeholder="e.g., SPY",
+                        type="text",
+                        value="",
+                        style={"flex": "2"},
+                    ),
+                    dbc.Input(
+                        id={"type": "core-row-weight", "index": index},
+                        placeholder="%",
+                        type="number",
+                        min=0,
+                        max=100,
+                        step="any",
+                        value=100,
+                        style={"flex": "1"},
+                    ),
+                    dbc.InputGroupText("%", style={"padding": "0.25rem 0.5rem"}),
+                    dbc.Button(
+                        html.I(className="fas fa-times"),
+                        id={"type": "core-row-delete", "index": index},
+                        color="danger",
+                        outline=True,
+                        size="sm",
+                        style={"padding": "0.25rem 0.5rem"},
+                    ),
+                ],
+                size="sm",
+                className="mb-1",
+            ),
+        ],
+    )
+
+
 def _create_bm_row(index: int):
     """Create a single benchmark ticker/weight row for the Custom BM UI."""
     return html.Div(
@@ -64,8 +105,8 @@ def _create_bm_row(index: int):
                         placeholder="%",
                         type="number",
                         min=0,
-                        max=100,
-                        step=1,
+                        max=200,
+                        step="any",
                         value=100,
                         style={"flex": "1"},
                     ),
@@ -90,6 +131,78 @@ def create_sidebar_content():
     """Create the sidebar content (controls only, no wrapper)."""
     return [
         html.H4("Parameters", className="mb-3"),
+
+            # Strategy Mode Section
+            html.H6("Strategy Mode", className="text-muted mb-2"),
+            dbc.RadioItems(
+                id="strategy-mode-radio",
+                options=[
+                    {"label": "Single", "value": "single"},
+                    {"label": "Core-Satellite", "value": "core-satellite"},
+                ],
+                value="single",
+                inline=True,
+                className="mb-2",
+            ),
+            html.Div(
+                id="core-satellite-div",
+                style={"display": "none"},
+                children=[
+                    label_with_help(
+                        "Core Allocation",
+                        "help-core-alloc",
+                        "Percentage of total portfolio allocated to the core (fixed-weight) component. The remainder goes to the satellite (momentum) strategy.",
+                    ),
+                    dbc.InputGroup(
+                        [
+                            dbc.Input(
+                                id="core-weight-input",
+                                type="number",
+                                min=1,
+                                max=99,
+                                step=1,
+                                value=70,
+                            ),
+                            dbc.InputGroupText("%"),
+                        ],
+                        size="sm",
+                        className="mb-1",
+                    ),
+                    html.Small(
+                        id="satellite-weight-label",
+                        children="Satellite: 30%",
+                        className="text-muted d-block mb-2",
+                    ),
+                    label_with_help(
+                        "Core Tickers & Weights",
+                        "help-core-tickers",
+                        "Select tickers and their relative weights within the core allocation. Weights are normalized to sum to 100%.",
+                    ),
+                    html.Div(
+                        id="core-rows-container",
+                        children=[_create_core_row(0)],
+                    ),
+                    dbc.Button(
+                        [html.I(className="fas fa-plus me-1"), "Add"],
+                        id="core-add-row-btn",
+                        color="secondary",
+                        outline=True,
+                        size="sm",
+                        className="mb-2",
+                    ),
+                    dbc.Button(
+                        [html.I(className="fas fa-check me-1"), "Apply"],
+                        id="apply-core-btn",
+                        color="success",
+                        outline=True,
+                        size="sm",
+                        className="mb-2 ms-2",
+                    ),
+                    html.Div(id="core-ticker-status", className="mb-2"),
+                ],
+            ),
+            dcc.Store(id="core-config-store", data=[]),
+            html.Hr(),
 
             # Ticker Selection Section
             html.H6("Ticker Selection", className="text-muted mb-2"),

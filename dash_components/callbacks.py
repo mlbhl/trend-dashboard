@@ -14,6 +14,8 @@ from src.config import TICKER_PRESETS, DEFAULT_PRESET, WEIGHT_METHODS
 from src.data import load_price_data
 from src.signals import generate_signal, get_signal_ranking
 from src.portfolio import (
+    backtest,
+    compute_weight_core,
     compute_weight_top_k,
     compute_weight_quantile,
     run_top_k_backtest,
@@ -29,7 +31,7 @@ from src.charts import (
     create_returns_table,
 )
 from src.optimizer import optimize_sharpe, walk_forward_optimize
-from dash_components.layout import _create_bm_row
+from dash_components.layout import _create_bm_row, _create_core_row
 
 
 def _build_composite_bm(bm_config: list, start_date: str) -> tuple:
@@ -88,7 +90,7 @@ def _build_composite_bm(bm_config: list, start_date: str) -> tuple:
     label_parts = []
     for t, w in zip(tickers, weights):
         if t in all_data.columns:
-            label_parts.append(f"{t} {w:.0f}%")
+            label_parts.append(f"{t} {w:.1f}%")
     bm_label = " + ".join(label_parts)
 
     return composite_price, bm_label, warn_msgs
@@ -132,6 +134,96 @@ def register_callbacks(app):
         if bm_type == "custom":
             return {"display": "block"}
         return {"display": "none"}
+
+    @app.callback(
+        Output("core-satellite-div", "style"),
+        Output("satellite-weight-label", "children"),
+        Input("strategy-mode-radio", "value"),
+        Input("core-weight-input", "value"),
+    )
+    def toggle_core_satellite(mode, core_pct):
+        """Show/hide core-satellite settings and update satellite label."""
+        if mode == "core-satellite":
+            sat_pct = 100 - (core_pct or 70)
+            return {"display": "block"}, f"Satellite: {sat_pct}%"
+        return {"display": "none"}, "Satellite: 30%"
+
+    @app.callback(
+        Output("core-rows-container", "children"),
+        Input("core-add-row-btn", "n_clicks"),
+        Input({"type": "core-row-delete", "index": ALL}, "n_clicks"),
+        State("core-rows-container", "children"),
+        prevent_initial_call=True,
+    )
+    def manage_core_rows(add_clicks, delete_clicks, current_rows):
+        """Add or delete core ticker rows."""
+        from dash import ctx
+
+        triggered = ctx.triggered_id
+
+        if not current_rows:
+            current_rows = []
+
+        if triggered == "core-add-row-btn":
+            existing_indices = []
+            for row in current_rows:
+                if isinstance(row, dict) and "props" in row:
+                    row_id = row["props"].get("id", {})
+                    if isinstance(row_id, dict):
+                        existing_indices.append(row_id.get("index", 0))
+            next_index = max(existing_indices, default=-1) + 1
+            current_rows.append(_create_core_row(next_index))
+            return current_rows
+
+        if isinstance(triggered, dict) and triggered.get("type") == "core-row-delete":
+            delete_index = triggered["index"]
+            for i, row in enumerate(current_rows):
+                if isinstance(row, dict) and "props" in row:
+                    row_id = row["props"].get("id", {})
+                    if isinstance(row_id, dict) and row_id.get("index") == delete_index:
+                        if delete_clicks and i < len(delete_clicks) and delete_clicks[i]:
+                            new_rows = [r for j, r in enumerate(current_rows) if j != i]
+                            return new_rows if new_rows else [_create_core_row(0)]
+                        break
+            raise PreventUpdate
+
+        raise PreventUpdate
+
+    @app.callback(
+        Output("core-config-store", "data"),
+        Output("core-ticker-status", "children"),
+        Input("apply-core-btn", "n_clicks"),
+        State({"type": "core-row-ticker", "index": ALL}, "value"),
+        State({"type": "core-row-weight", "index": ALL}, "value"),
+        prevent_initial_call=True,
+    )
+    def apply_core_config(n_clicks, tickers, weights):
+        """Apply core config from all rows into core-config-store."""
+        if not n_clicks:
+            raise PreventUpdate
+
+        config = []
+        for t, w in zip(tickers or [], weights or []):
+            ticker = t.strip().upper() if t else ""
+            weight = float(w) if w is not None else 0
+            if ticker and weight > 0:
+                config.append({"ticker": ticker, "weight": weight})
+
+        if not config:
+            return [], dbc.Alert(
+                [html.I(className="fas fa-exclamation-triangle me-2"), "No valid tickers entered."],
+                color="warning",
+                className="py-2 mb-0",
+            )
+
+        # Display normalized weights
+        total = sum(c["weight"] for c in config)
+        label = " + ".join(f"{c['ticker']} {c['weight']/total*100:.1f}%" for c in config)
+        return config, dbc.Alert(
+            [html.I(className="fas fa-check-circle me-2"), f"Core: {label}"],
+            color="success",
+            className="py-2 mb-0",
+        )
 
     @app.callback(
         Output("bm-rows-container", "children"),
@@ -205,7 +297,7 @@ def register_callbacks(app):
                 className="py-2 mb-0",
             )
 
-        label = " + ".join(f"{c['ticker']} {c['weight']:.0f}%" for c in config)
+        label = " + ".join(f"{c['ticker']} {c['weight']:.1f}%" for c in config)
         return config, dbc.Alert(
             [html.I(className="fas fa-check-circle me-2"), f"Benchmark: {label}"],
             color="success",
@@ -487,6 +579,9 @@ def register_callbacks(app):
         State("tcost-input", "value"),
         State("bm-type-radio", "value"),
         State("bm-config-store", "data"),
+        State("strategy-mode-radio", "value"),
+        State("core-weight-input", "value"),
+        State("core-config-store", "data"),
         prevent_initial_call=True,
         background=True,
         running=[
@@ -516,10 +611,28 @@ def register_callbacks(app):
         tcost,
         bm_type,
         bm_config,
+        strategy_mode,
+        core_weight_pct,
+        core_config,
     ):
         """Run the main analysis."""
         if not n_clicks or not selected_tickers or len(selected_tickers) < 2:
             raise PreventUpdate
+
+        # Validate core-satellite config
+        if strategy_mode == "core-satellite" and not core_config:
+            return (
+                None, None, None, None, None, None,
+                {"display": "block"},  # Show instructions
+                {"display": "none"},  # Hide results
+                {"display": "none"},  # Hide loading
+                dbc.Alert(
+                    [html.I(className="fas fa-times-circle me-2"),
+                     "Core-Satellite mode requires core tickers. Please configure and Apply core settings."],
+                    color="danger",
+                ),
+                {"display": "none"},  # Hide walk-forward results
+            )
 
         # Calculate weights
         if weight_mode == "equal":
@@ -601,6 +714,46 @@ def register_callbacks(app):
             thresh=thresh,
         )
 
+        # Parse core-satellite config
+        is_core_satellite = strategy_mode == "core-satellite"
+        core_ratio = (core_weight_pct or 70) / 100.0 if is_core_satellite else 0.0
+
+        # Parse core tickers/weights from applied config
+        core_tickers_parsed = []
+        core_weights_parsed = []
+        if is_core_satellite and core_config:
+            for row in core_config:
+                ticker = row.get("ticker", "").strip().upper()
+                weight = float(row.get("weight", 0))
+                if ticker and weight > 0:
+                    core_tickers_parsed.append(ticker)
+                    core_weights_parsed.append(weight)
+
+        # Load core ticker data if needed (tickers not in selected universe)
+        if is_core_satellite and core_tickers_parsed:
+            extra_tickers = [t for t in core_tickers_parsed if t not in dataset.columns]
+            if extra_tickers:
+                extra_data, extra_missing = load_price_data(
+                    list(dataset.columns) + extra_tickers, start_date=start_date
+                )
+                if extra_missing:
+                    missing_core = [t for t in extra_missing if t in core_tickers_parsed]
+                    if missing_core:
+                        warnings.append(
+                            dbc.Alert(
+                                [html.I(className="fas fa-exclamation-triangle me-2"),
+                                 f"Core ticker(s) not found: {', '.join(missing_core)}"],
+                                color="warning",
+                                dismissable=True,
+                            )
+                        )
+                # Use expanded dataset for backtesting
+                dataset_expanded = extra_data
+            else:
+                dataset_expanded = dataset
+        else:
+            dataset_expanded = dataset
+
         # Run backtest
         if strategy_type == "Top-K":
             strat_nav, universe_bm_nav, turnover = run_top_k_backtest(
@@ -611,11 +764,50 @@ def register_callbacks(app):
                 tcost=tcost,
             )
             strat_name = "All" if top_k is None else f"Top-{top_k}"
-            navs = pd.DataFrame({strat_name: strat_nav})
 
-            # Get weights for heatmap
-            wgt, _ = compute_weight_top_k(dataset, signal, top_k=top_k, weight_method=weight_method)
-            weights_data = {strat_name: wgt.to_json(date_format="iso")}
+            # Get satellite weights for heatmap
+            sat_wgt, _ = compute_weight_top_k(dataset, signal, top_k=top_k, weight_method=weight_method)
+
+            if is_core_satellite and core_tickers_parsed:
+                # Build core weights on expanded dataset
+                core_wgt = compute_weight_core(
+                    dataset_expanded, signal, core_tickers_parsed, core_weights_parsed
+                )
+
+                # Align satellite weights to expanded dataset columns
+                sat_wgt_expanded = sat_wgt.reindex(columns=dataset_expanded.columns, fill_value=0.0)
+                core_wgt_aligned = core_wgt.reindex(columns=dataset_expanded.columns, fill_value=0.0)
+
+                # Blend weights
+                combined_wgt = core_ratio * core_wgt_aligned + (1 - core_ratio) * sat_wgt_expanded
+
+                # Shift to next month beginning
+                combined_wgt_shifted = combined_wgt.copy()
+                combined_wgt_shifted.index = combined_wgt_shifted.index + BMonthBegin(1)
+                core_wgt_shifted = core_wgt_aligned.copy()
+                core_wgt_shifted.index = core_wgt_shifted.index + BMonthBegin(1)
+                sat_wgt_shifted = sat_wgt_expanded.copy()
+                sat_wgt_shifted.index = sat_wgt_shifted.index + BMonthBegin(1)
+
+                # Run backtests
+                combined_nav, _ = backtest(dataset_expanded, combined_wgt_shifted, tcost=tcost)
+                core_nav_only, _ = backtest(dataset_expanded, core_wgt_shifted, tcost=0)
+                sat_nav_only, _ = backtest(dataset_expanded, sat_wgt_shifted, tcost=tcost)
+
+                # Build NAV DataFrame with detailed core label
+                total_core_w = sum(core_weights_parsed)
+                core_label = " + ".join(
+                    f"{t} {w/total_core_w*100:.1f}%" for t, w in zip(core_tickers_parsed, core_weights_parsed)
+                )
+                navs = pd.DataFrame({
+                    "Combined": combined_nav,
+                    f"Core ({core_label})": core_nav_only,
+                    f"Satellite ({strat_name})": sat_nav_only,
+                })
+                weights_data = {strat_name: sat_wgt.to_json(date_format="iso")}
+            else:
+                navs = pd.DataFrame({strat_name: strat_nav})
+                weights_data = {strat_name: sat_wgt.to_json(date_format="iso")}
         else:
             q_nav, q_to, universe_bm_nav = run_quantile_backtest(
                 dataset,
@@ -634,12 +826,27 @@ def register_callbacks(app):
 
         # Handle benchmark
         if custom_bm_label and bm_data is not None:
+            bm_col_name = f"BM ({custom_bm_label})"
             bm_aligned = bm_data.reindex(navs.index).ffill().bfill()
             bm_nav = bm_aligned / bm_aligned.iloc[0] * 1000
-            bm_nav.name = custom_bm_label
-            navs["BM"] = bm_nav
+            navs[bm_col_name] = bm_nav
+        elif is_core_satellite and core_tickers_parsed:
+            # Core-satellite BM: same core/satellite split but satellite = equal weight
+            _, bm_sat_wgt = compute_weight_top_k(dataset, signal, top_k=top_k, weight_method=weight_method)
+            bm_sat_expanded = bm_sat_wgt.reindex(columns=dataset_expanded.columns, fill_value=0.0)
+            core_wgt_for_bm = compute_weight_core(
+                dataset_expanded, signal, core_tickers_parsed, core_weights_parsed
+            )
+            core_wgt_for_bm = core_wgt_for_bm.reindex(columns=dataset_expanded.columns, fill_value=0.0)
+            combined_bm_wgt = core_ratio * core_wgt_for_bm + (1 - core_ratio) * bm_sat_expanded
+            combined_bm_wgt_shifted = combined_bm_wgt.copy()
+            combined_bm_wgt_shifted.index = combined_bm_wgt_shifted.index + BMonthBegin(1)
+            combined_bm_nav, _ = backtest(dataset_expanded, combined_bm_wgt_shifted, tcost=0)
+            bm_col_name = f"BM (Core {core_ratio:.0%} + EW {1-core_ratio:.0%})"
+            navs[bm_col_name] = combined_bm_nav
         else:
-            navs["BM"] = universe_bm_nav
+            bm_col_name = "BM (Equal Weight)"
+            navs[bm_col_name] = universe_bm_nav
 
         # Apply backtest start date
         backtest_start = pd.to_datetime(backtest_start_date)
@@ -666,6 +873,10 @@ def register_callbacks(app):
             "tcost": tcost,
             "strategy_type": strategy_type,
             "backtest_start_date": str(backtest_start_date),
+            "strategy_mode": strategy_mode,
+            "core_ratio": core_ratio if is_core_satellite else None,
+            "core_tickers": core_tickers_parsed if is_core_satellite else None,
+            "bm_col_name": bm_col_name,
             "custom_bm_label": custom_bm_label if bm_type == "custom" else None,
             "display_start": display_start.strftime("%Y-%m-%d"),
             "display_end": navs_display.index[-1].strftime("%Y-%m-%d"),
@@ -738,7 +949,8 @@ def register_callbacks(app):
         period_info = f"Backtest Period: {params['display_start']} ~ {params['display_end']}"
 
         # KPI Cards
-        kpis = calculate_kpis(navs)
+        bm_col = params.get("bm_col_name", "BM (Equal Weight)")
+        kpis = calculate_kpis(navs, benchmark_col=bm_col)
         kpi_cards = []
         for name, metrics in kpis.items():
             card = dbc.Col(
@@ -935,6 +1147,9 @@ def register_callbacks(app):
         State("opt-mode-radio", "value"),
         State("opt-samples-input", "value"),
         State("opt-seed-input", "value"),
+        State("strategy-mode-radio", "value"),
+        State("core-weight-input", "value"),
+        State("core-config-store", "data"),
         background=True,
         running=[
             (Output("optimize-progress-div", "children"), dbc.Progress(value=0, striped=True, animated=True), ""),
@@ -956,10 +1171,20 @@ def register_callbacks(app):
         opt_mode,
         n_samples,
         opt_seed,
+        strategy_mode,
+        core_weight_pct,
+        core_config,
     ):
         """Run parameter optimization."""
         if not n_clicks or not selected_tickers or len(selected_tickers) < 2:
             raise PreventUpdate
+
+        if strategy_mode == "core-satellite" and not core_config:
+            return None, dbc.Alert(
+                [html.I(className="fas fa-times-circle me-2"),
+                 "Core-Satellite mode requires core tickers. Please configure and Apply core settings."],
+                color="danger",
+            ), ""
 
         # Validate samples
         if opt_mode == "random" and n_samples:
@@ -982,6 +1207,24 @@ def register_callbacks(app):
         except (ValueError, TypeError):
             opt_seed = None
 
+        # Build core_config for optimizer
+        opt_core_config = None
+        if strategy_mode == "core-satellite" and core_config:
+            core_tickers = [r["ticker"].strip().upper() for r in core_config if r.get("ticker")]
+            core_weights = [float(r.get("weight", 0)) for r in core_config if r.get("ticker")]
+            if core_tickers:
+                # Load extra core ticker data
+                extra = [t for t in core_tickers if t not in dataset.columns]
+                if extra:
+                    dataset, _ = load_price_data(
+                        list(dataset.columns) + extra, start_date=start_date
+                    )
+                opt_core_config = {
+                    "tickers": core_tickers,
+                    "weights": core_weights,
+                    "ratio": (core_weight_pct or 70) / 100.0,
+                }
+
         # Progress callback
         def update_progress(current, total):
             progress = int(current / total * 100)
@@ -998,6 +1241,7 @@ def register_callbacks(app):
             n_samples=n_samples,
             seed=opt_seed,
             progress_callback=update_progress,
+            core_config=opt_core_config,
         )
 
         if result["best_params"] is None:
@@ -1093,6 +1337,9 @@ def register_callbacks(app):
         State("wf-seed-input", "value"),
         State("bm-type-radio", "value"),
         State("bm-config-store", "data"),
+        State("strategy-mode-radio", "value"),
+        State("core-weight-input", "value"),
+        State("core-config-store", "data"),
         background=True,
         running=[
             (Output("wf-progress-div", "children"), dbc.Progress(value=0, striped=True, animated=True), ""),
@@ -1118,6 +1365,9 @@ def register_callbacks(app):
         wf_seed,
         bm_type,
         bm_config,
+        strategy_mode,
+        core_weight_pct,
+        core_config,
     ):
         """Run walk-forward optimization."""
         # Default empty results for error cases
@@ -1144,6 +1394,13 @@ def register_callbacks(app):
 
         if not n_clicks or not selected_tickers or len(selected_tickers) < 2:
             raise PreventUpdate
+
+        if strategy_mode == "core-satellite" and not core_config:
+            return (None, dbc.Alert(
+                [html.I(className="fas fa-times-circle me-2"),
+                 "Core-Satellite mode requires core tickers. Please configure and Apply core settings."],
+                color="danger",
+            ), "") + empty_results
 
         # Validate train period
         train_months = int(train_months) if train_months else 36
@@ -1177,6 +1434,23 @@ def register_callbacks(app):
         except (ValueError, TypeError):
             wf_seed = None
 
+        # Build core_config for walk-forward
+        wf_core_config = None
+        if strategy_mode == "core-satellite" and core_config:
+            core_tickers = [r["ticker"].strip().upper() for r in core_config if r.get("ticker")]
+            core_weights = [float(r.get("weight", 0)) for r in core_config if r.get("ticker")]
+            if core_tickers:
+                extra = [t for t in core_tickers if t not in dataset.columns]
+                if extra:
+                    dataset, _ = load_price_data(
+                        list(dataset.columns) + extra, start_date=start_date
+                    )
+                wf_core_config = {
+                    "tickers": core_tickers,
+                    "weights": core_weights,
+                    "ratio": (core_weight_pct or 70) / 100.0,
+                }
+
         # Progress callback
         def update_progress(fold, total_folds, step, total_steps):
             if fold > total_folds:
@@ -1203,6 +1477,7 @@ def register_callbacks(app):
             bm_ticker=wf_bm_label,
             bm_data=bm_data,
             progress_callback=update_progress,
+            core_config=wf_core_config,
         )
 
         if "error" in wf_result:
