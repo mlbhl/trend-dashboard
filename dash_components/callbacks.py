@@ -791,7 +791,7 @@ def register_callbacks(app):
 
                 # Run backtests
                 combined_nav, _ = backtest(dataset_expanded, combined_wgt_shifted, tcost=tcost)
-                core_nav_only, _ = backtest(dataset_expanded, core_wgt_shifted, tcost=0)
+                core_nav_only, _ = backtest(dataset_expanded, core_wgt_shifted, tcost=tcost)
                 sat_nav_only, _ = backtest(dataset_expanded, sat_wgt_shifted, tcost=tcost)
 
                 # Build NAV DataFrame with detailed core label

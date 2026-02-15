@@ -479,7 +479,11 @@ def create_sidebar_content():
                 clearable=False,
                 className="mb-2",
             ),
-            label_with_help("Transaction Cost (one-way)", "help-tcost", "One-way transaction cost per trade in %. 5bp = 0.05%. Applied to both buys and sells."),
+            html.Hr(),
+
+            # Transaction Cost Section
+            html.H6("Transaction Costs", className="text-muted mb-2"),
+            label_with_help("One-way Transaction Cost per Trade", "help-tcost", "In %. 5bp = 0.05%. Applied to both buys and sells."),
             dbc.InputGroup(
                 [
                     dbc.Input(
@@ -487,7 +491,7 @@ def create_sidebar_content():
                         type="number",
                         min=0,
                         max=1.0,
-                        step=0.05,
+                        step=0.01,
                         value=0.00,
                     ),
                     dbc.InputGroupText("%"),
