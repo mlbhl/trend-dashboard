@@ -1006,7 +1006,7 @@ def create_main_content():
                                            color="secondary", outline=True, size="sm"),
                                 className="text-end mb-1",
                             ),
-                            dcc.Graph(id="annual-returns-chart", config={"displaylogo": False, "responsive": True}),
+                            dcc.Graph(id="annual-returns-chart", config={"displaylogo": False, "responsive": True, "modeBarButtonsToRemove": ["select2d", "lasso2d"]}),
 
                             # Monthly Returns Heatmap
                             html.H4("Monthly Returns", className="mb-3"),
@@ -1035,6 +1035,8 @@ def create_main_content():
                                 className="mb-3",
                             ),
                             dcc.Graph(id="monthly-returns-chart", config={"displaylogo": False, "responsive": True}),
+
+                            html.Div(className="mb-4"),
 
                             # Signal Category Table
                             html.H4("Current Signal by Quantile", className="mb-3"),
@@ -1072,6 +1074,7 @@ def create_main_content():
                             ),
 
                             # Holdings Heatmap Section
+                            html.Div(className="mb-4"),
                             html.H4("Holdings Analysis", className="mb-3"),
                             html.Small(
                                 "The top quantile represents the best-performing assets, while the bottom quantile represents the worst.",
