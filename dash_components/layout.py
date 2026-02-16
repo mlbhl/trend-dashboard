@@ -889,18 +889,38 @@ def create_main_content():
                                 html.H5("Quick Start"),
                                 html.Ol(
                                     [
-                                        html.Li("Select tickers in the sidebar (or use the default set)."),
+                                        html.Li("Select tickers in the sidebar (or use a preset)."),
+                                        html.Li("Adjust signal and portfolio parameters as needed."),
                                         html.Li("Click Run Analysis."),
-                                        html.Li("Review the results."),
+                                        html.Li("Review charts, tables, and KPIs."),
+                                        html.Li("Click the download icon above any chart to export data as Excel."),
+                                    ]
+                                ),
+                                html.Hr(),
+                                html.H5("Strategy Mode"),
+                                html.Ul(
+                                    [
+                                        html.Li(
+                                            [
+                                                html.Strong("Single: "),
+                                                "runs a pure momentum rotation strategy.",
+                                            ]
+                                        ),
+                                        html.Li(
+                                            [
+                                                html.Strong("Core-Satellite: "),
+                                                "blends a fixed-weight core allocation with a momentum satellite. "
+                                                "Configure core tickers/weights and the core ratio, then click Apply.",
+                                            ]
+                                        ),
                                     ]
                                 ),
                                 html.Hr(),
                                 html.H5("Signal Parameters"),
                                 html.P(
                                     [
-                                        "Momentum is measured using three lookback periods (Short, Mid, and Long).",
-                                        html.Br(),
-                                        "For each period, assets are ranked by returns, and the final signal is computed as the weighted average of these ranks.",
+                                        "Momentum is measured using three lookback periods (Short, Mid, Long). ",
+                                        "Assets are ranked by returns for each period, and the final signal is the weighted average of these ranks.",
                                     ]
                                 ),
                                 html.Hr(),
@@ -916,10 +936,60 @@ def create_main_content():
                                         html.Li(
                                             [
                                                 html.Strong("Quantile: "),
-                                                "divides assets into groups to analyze momentum.",
+                                                "divides assets into groups to compare momentum quantiles.",
+                                            ]
+                                        ),
+                                        html.Li(
+                                            [
+                                                html.Strong("Weighting: "),
+                                                "Equal (1/N), Inverse Vol, or Rank-based weights.",
                                             ]
                                         ),
                                     ]
+                                ),
+                                html.Hr(),
+                                html.H5("Benchmark"),
+                                html.Ul(
+                                    [
+                                        html.Li(
+                                            [
+                                                html.Strong("Equal Weight: "),
+                                                "equal-weight basket of all selected tickers.",
+                                            ]
+                                        ),
+                                        html.Li(
+                                            [
+                                                html.Strong("Custom BM: "),
+                                                "build a composite benchmark from multiple tickers with custom weights. "
+                                                "Weights < 100% imply cash, > 100% imply leverage.",
+                                            ]
+                                        ),
+                                    ]
+                                ),
+                                html.Hr(),
+                                html.H5("Optimization"),
+                                html.Ul(
+                                    [
+                                        html.Li(
+                                            [
+                                                html.Strong("Parameter Optimization: "),
+                                                "grid search over signal windows and weights to maximize Sharpe ratio.",
+                                            ]
+                                        ),
+                                        html.Li(
+                                            [
+                                                html.Strong("Walk-Forward Analysis: "),
+                                                "out-of-sample validation using rolling or expanding windows. "
+                                                "Measures Sharpe decay to assess overfitting risk.",
+                                            ]
+                                        ),
+                                    ]
+                                ),
+                                html.Hr(),
+                                html.H5("Data Export"),
+                                html.P(
+                                    "Click the download icon above NAV, drawdown, annual returns, monthly returns, "
+                                    "or holdings charts to export the underlying data as .xlsx."
                                 ),
                             ]
                         ),
@@ -957,26 +1027,54 @@ def create_main_content():
                                     dbc.CardBody(
                                         [
                                             html.H5("Quick Reference"),
+                                            html.H6("Strategy Mode"),
+                                            html.Ul(
+                                                [
+                                                    html.Li("Single: pure momentum rotation."),
+                                                    html.Li("Core-Satellite: fixed core + momentum satellite, blended at weight level."),
+                                                ]
+                                            ),
                                             html.H6("Signal Parameters"),
                                             html.Ul(
                                                 [
-                                                    html.Li("Signal Window: Lookback period (in months) for each timeframe."),
-                                                    html.Li("Signal Weight: Weight assigned to each window (equal 1/3 or custom)."),
+                                                    html.Li("Signal Window: Lookback period (months) for Short, Mid, Long."),
+                                                    html.Li("Signal Weight: Relative importance of each window (equal 1/3 or custom)."),
                                                 ]
                                             ),
                                             html.H6("Strategy Types"),
                                             html.Ul(
                                                 [
-                                                    html.Li("Top-K selects the top K ranked assets for investment."),
-                                                    html.Li("Quantile divides assets into groups to analyze momentum."),
+                                                    html.Li("Top-K selects the top K ranked assets."),
+                                                    html.Li("Quantile divides assets into groups to compare momentum."),
                                                 ]
                                             ),
                                             html.H6("Weighting Methods"),
                                             html.Ul(
                                                 [
-                                                    html.Li("Equal assigns 1/N weights to each asset."),
-                                                    html.Li("Inverse Vol assigns higher weights to lower-volatility assets."),
-                                                    html.Li("Rank assigns higher weights to better-ranked assets."),
+                                                    html.Li("Equal: 1/N weights."),
+                                                    html.Li("Inverse Vol: higher weights to lower-volatility assets."),
+                                                    html.Li("Rank: higher weights to better-ranked assets."),
+                                                ]
+                                            ),
+                                            html.H6("Benchmark"),
+                                            html.Ul(
+                                                [
+                                                    html.Li("Equal Weight: equal-weight basket of selected tickers."),
+                                                    html.Li("Custom BM: composite from multiple tickers with custom weights."),
+                                                ]
+                                            ),
+                                            html.H6("Optimization"),
+                                            html.Ul(
+                                                [
+                                                    html.Li("Parameter Optimization: grid search to maximize Sharpe ratio."),
+                                                    html.Li("Walk-Forward: out-of-sample validation with Sharpe decay analysis."),
+                                                ]
+                                            ),
+                                            html.H6("Data Export"),
+                                            html.Ul(
+                                                [
+                                                    html.Li("Download icon above each chart exports data as .xlsx."),
+                                                    html.Li("Available: NAV, drawdown, annual returns, monthly returns, holdings."),
                                                 ]
                                             ),
                                         ]
