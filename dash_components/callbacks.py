@@ -4,7 +4,7 @@ import json
 import numpy as np
 import pandas as pd
 import dash
-from dash import Input, Output, State, callback, html, no_update, dash_table, ALL
+from dash import Input, Output, State, callback, dcc, html, no_update, dash_table, ALL
 from dash.exceptions import PreventUpdate
 import dash_bootstrap_components as dbc
 import plotly.graph_objects as go
@@ -21,7 +21,7 @@ from src.portfolio import (
     run_top_k_backtest,
     run_quantile_backtest,
 )
-from src.metrics import summary_stats, rebase, calculate_kpis
+from src.metrics import summary_stats, rebase, calculate_kpis, annual_returns, monthly_returns
 from src.charts import (
     create_nav_chart,
     create_drawdown_chart,
@@ -29,6 +29,8 @@ from src.charts import (
     create_signal_category_table,
     create_quantile_spread_chart,
     create_returns_table,
+    create_annual_returns_chart,
+    create_monthly_returns_table,
 )
 from src.optimizer import optimize_sharpe, walk_forward_optimize
 from dash_components.layout import _create_bm_row, _create_core_row
@@ -799,8 +801,10 @@ def register_callbacks(app):
                 core_label = " + ".join(
                     f"{t} {w/total_core_w*100:.1f}%" for t, w in zip(core_tickers_parsed, core_weights_parsed)
                 )
+                core_pct = int(round(core_ratio * 100))
+                sat_pct = 100 - core_pct
                 navs = pd.DataFrame({
-                    "Combined": combined_nav,
+                    f"Combined (Core {core_pct}% / Satellite {sat_pct}%)": combined_nav,
                     f"Core ({core_label})": core_nav_only,
                     f"Satellite ({strat_name})": sat_nav_only,
                 })
@@ -917,6 +921,9 @@ def register_callbacks(app):
         Output("raw-signal-table-container", "children"),
         Output("quantile-spread-section", "style"),
         Output("spread-chart", "figure"),
+        Output("annual-returns-chart", "figure"),
+        Output("monthly-returns-select", "options"),
+        Output("monthly-returns-select", "value"),
         Output("heatmap-quantile-select", "options"),
         Output("heatmap-quantile-select", "value"),
         Output("quantile-selector-div", "style"),
@@ -996,6 +1003,14 @@ def register_callbacks(app):
             style_header={"fontWeight": "bold"},
         )
 
+        # Annual Returns Chart
+        ann_rets = annual_returns(navs)
+        fig_annual = create_annual_returns_chart(ann_rets, title="Annual Returns")
+
+        # Monthly Returns Dropdown options (all NAV columns)
+        monthly_options = [{"label": col, "value": col} for col in navs.columns]
+        monthly_default = navs.columns[0]
+
         # Quantile Spread (only for Quantile strategy)
         if params["strategy_type"] == "Quantile" and "Q1" in navs.columns and "Q5" in navs.columns:
             spread_style = {"display": "block"}
@@ -1073,6 +1088,9 @@ def register_callbacks(app):
             raw_signal_table,
             spread_style,
             fig_spread,
+            fig_annual,
+            monthly_options,
+            monthly_default,
             quantile_options,
             default_quantile,
             quantile_selector_style,
@@ -1126,6 +1144,147 @@ def register_callbacks(app):
             info = None
 
         return fig_heatmap, info
+
+    # =========================================================================
+    # Monthly Returns Heatmap Callback
+    # =========================================================================
+
+    @app.callback(
+        Output("monthly-returns-chart", "figure"),
+        Input("monthly-returns-select", "value"),
+        State("nav-store", "data"),
+        prevent_initial_call=True,
+    )
+    def update_monthly_returns(selected_col, navs_json):
+        """Update monthly returns heatmap when dropdown selection changes."""
+        if not selected_col or not navs_json:
+            raise PreventUpdate
+
+        navs = pd.read_json(navs_json)
+        navs.index = pd.to_datetime(navs.index)
+        navs = navs.sort_index()
+
+        if selected_col not in navs.columns:
+            raise PreventUpdate
+
+        m_rets = monthly_returns(navs[selected_col])
+        fig = create_monthly_returns_table(m_rets, title=f"Monthly Returns — {selected_col}")
+        return fig
+
+    # =========================================================================
+    # Excel Download Callbacks
+    # =========================================================================
+
+    @app.callback(
+        Output("download-nav", "data"),
+        Input("dl-nav-btn", "n_clicks"),
+        State("nav-store", "data"),
+        prevent_initial_call=True,
+    )
+    def download_nav(n_clicks, navs_json):
+        """Download rebased NAV data as Excel."""
+        if not n_clicks or not navs_json:
+            raise PreventUpdate
+        from io import BytesIO
+        navs = pd.read_json(navs_json)
+        navs.index = pd.to_datetime(navs.index)
+        navs = navs.sort_index()
+        navs_rebased = navs / navs.iloc[0] * 100
+        buf = BytesIO()
+        navs_rebased.to_excel(buf, index=True, sheet_name="NAV")
+        buf.seek(0)
+        return dcc.send_bytes(buf.getvalue(), "nav_data.xlsx")
+
+    @app.callback(
+        Output("download-dd", "data"),
+        Input("dl-dd-btn", "n_clicks"),
+        State("nav-store", "data"),
+        prevent_initial_call=True,
+    )
+    def download_drawdown(n_clicks, navs_json):
+        """Download drawdown data as Excel."""
+        if not n_clicks or not navs_json:
+            raise PreventUpdate
+        from io import BytesIO
+        navs = pd.read_json(navs_json)
+        navs.index = pd.to_datetime(navs.index)
+        navs = navs.sort_index()
+        navs_rebased = navs / navs.iloc[0] * 100
+        cummax = navs_rebased.cummax()
+        drawdown = (navs_rebased - cummax) / cummax
+        buf = BytesIO()
+        drawdown.to_excel(buf, index=True, sheet_name="Drawdown")
+        buf.seek(0)
+        return dcc.send_bytes(buf.getvalue(), "drawdown_data.xlsx")
+
+    @app.callback(
+        Output("download-annual", "data"),
+        Input("dl-annual-btn", "n_clicks"),
+        State("nav-store", "data"),
+        prevent_initial_call=True,
+    )
+    def download_annual_returns(n_clicks, navs_json):
+        """Download annual returns data as Excel."""
+        if not n_clicks or not navs_json:
+            raise PreventUpdate
+        from io import BytesIO
+        navs = pd.read_json(navs_json)
+        navs.index = pd.to_datetime(navs.index)
+        navs = navs.sort_index()
+        ann_rets = annual_returns(navs)
+        buf = BytesIO()
+        ann_rets.to_excel(buf, index=True, sheet_name="Annual Returns")
+        buf.seek(0)
+        return dcc.send_bytes(buf.getvalue(), "annual_returns.xlsx")
+
+    @app.callback(
+        Output("download-monthly", "data"),
+        Input("dl-monthly-btn", "n_clicks"),
+        State("nav-store", "data"),
+        State("monthly-returns-select", "value"),
+        prevent_initial_call=True,
+    )
+    def download_monthly_returns(n_clicks, navs_json, selected_col):
+        """Download monthly returns data as Excel."""
+        if not n_clicks or not navs_json or not selected_col:
+            raise PreventUpdate
+        from io import BytesIO
+        navs = pd.read_json(navs_json)
+        navs.index = pd.to_datetime(navs.index)
+        navs = navs.sort_index()
+        if selected_col not in navs.columns:
+            raise PreventUpdate
+        m_rets = monthly_returns(navs[selected_col])
+        m_rets.columns = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                          "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+        buf = BytesIO()
+        m_rets.to_excel(buf, index=True, sheet_name="Monthly Returns")
+        buf.seek(0)
+        return dcc.send_bytes(buf.getvalue(), "monthly_returns.xlsx")
+
+    @app.callback(
+        Output("download-holdings", "data"),
+        Input("dl-holdings-btn", "n_clicks"),
+        State("weights-store", "data"),
+        State("heatmap-quantile-select", "value"),
+        prevent_initial_call=True,
+    )
+    def download_holdings(n_clicks, weights_data, selected_quantile):
+        """Download holdings/weights data as Excel."""
+        if not n_clicks or not weights_data or not selected_quantile:
+            raise PreventUpdate
+        from io import BytesIO
+        wgt_json = weights_data.get(selected_quantile)
+        if not wgt_json:
+            raise PreventUpdate
+        wgt = pd.read_json(wgt_json)
+        wgt.index = pd.to_datetime(wgt.index)
+        wgt = wgt.sort_index()
+        wgt.index = wgt.index + BMonthBegin(1)
+        buf = BytesIO()
+        wgt.to_excel(buf, index=True, sheet_name="Holdings")
+        buf.seek(0)
+        return dcc.send_bytes(buf.getvalue(), "holdings_data.xlsx")
 
     # =========================================================================
     # Optimization Callback (Background Callback)

@@ -142,3 +142,64 @@ def _calculate_mtd_return(nav: pd.Series) -> float:
     if len(mtd_data) > 0:
         return nav.iloc[-1] / mtd_data.iloc[0] - 1
     return 0.0
+
+
+def annual_returns(navs: pd.DataFrame) -> pd.DataFrame:
+    """Calculate annual returns for each column. Last row is YTD if incomplete year.
+
+    Args:
+        navs: NAV DataFrame (daily index)
+
+    Returns:
+        DataFrame with years as index, columns matching navs columns.
+        Values are decimal returns (e.g. 0.10 = 10%).
+    """
+    if isinstance(navs, pd.Series):
+        navs = navs.to_frame()
+
+    navs = navs.dropna()
+    daily_ret = navs.pct_change().fillna(0)
+
+    # Group by year and compound
+    annual = daily_ret.groupby(daily_ret.index.year).apply(
+        lambda x: (1 + x).prod() - 1
+    )
+    annual.index.name = "Year"
+
+    # Label last row as YTD if year is incomplete
+    last_year = navs.index[-1].year
+    last_day = navs.index[-1]
+    year_end = pd.Timestamp(f"{last_year}-12-31")
+    if last_day < year_end:
+        annual = annual.rename(index={last_year: f"{last_year} YTD"})
+
+    return annual
+
+
+def monthly_returns(nav: pd.Series) -> pd.DataFrame:
+    """Convert a single NAV series to a (year x month) matrix of returns.
+
+    Args:
+        nav: NAV Series (daily index)
+
+    Returns:
+        DataFrame with years as index, months 1-12 as columns.
+        Values are decimal returns.
+    """
+    nav = nav.dropna()
+    daily_ret = nav.pct_change().fillna(0)
+
+    # Compound by (year, month)
+    monthly = daily_ret.groupby([daily_ret.index.year, daily_ret.index.month]).apply(
+        lambda x: (1 + x).prod() - 1
+    )
+    monthly.index.names = ["Year", "Month"]
+    monthly = monthly.unstack(level="Month")
+
+    # Ensure columns 1-12
+    for m in range(1, 13):
+        if m not in monthly.columns:
+            monthly[m] = np.nan
+    monthly = monthly[range(1, 13)]
+
+    return monthly

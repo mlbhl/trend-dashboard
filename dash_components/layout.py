@@ -987,8 +987,54 @@ def create_main_content():
 
                             # Performance Charts Section
                             html.H4("Performance Charts", className="mb-3"),
+                            html.Div(
+                                dbc.Button(html.I(className="fas fa-download"), id="dl-nav-btn",
+                                           color="secondary", outline=True, size="sm"),
+                                className="text-end mb-1",
+                            ),
                             dcc.Graph(id="nav-chart", config={"displaylogo": False, "responsive": True}),
+                            html.Div(
+                                dbc.Button(html.I(className="fas fa-download"), id="dl-dd-btn",
+                                           color="secondary", outline=True, size="sm"),
+                                className="text-end mb-1",
+                            ),
                             dcc.Graph(id="drawdown-chart", config={"displaylogo": False, "responsive": True}),
+
+                            # Annual Returns Bar Chart
+                            html.Div(
+                                dbc.Button(html.I(className="fas fa-download"), id="dl-annual-btn",
+                                           color="secondary", outline=True, size="sm"),
+                                className="text-end mb-1",
+                            ),
+                            dcc.Graph(id="annual-returns-chart", config={"displaylogo": False, "responsive": True}),
+
+                            # Monthly Returns Heatmap
+                            html.H4("Monthly Returns", className="mb-3"),
+                            dbc.Row(
+                                [
+                                    dbc.Col(
+                                        dcc.Dropdown(
+                                            id="monthly-returns-select",
+                                            options=[],
+                                            value=None,
+                                            clearable=False,
+                                            placeholder="Select strategy...",
+                                        ),
+                                        width=4,
+                                    ),
+                                    dbc.Col(
+                                        html.Div(
+                                            dbc.Button(html.I(className="fas fa-download"), id="dl-monthly-btn",
+                                                       color="secondary", outline=True, size="sm"),
+                                            className="text-end",
+                                        ),
+                                        width={"size": "auto", "offset": 0},
+                                        className="d-flex align-items-end ms-auto",
+                                    ),
+                                ],
+                                className="mb-3",
+                            ),
+                            dcc.Graph(id="monthly-returns-chart", config={"displaylogo": False, "responsive": True}),
 
                             # Signal Category Table
                             html.H4("Current Signal by Quantile", className="mb-3"),
@@ -1057,6 +1103,11 @@ def create_main_content():
                                         className="mb-3",
                                     ),
                                 ],
+                            ),
+                            html.Div(
+                                dbc.Button(html.I(className="fas fa-download"), id="dl-holdings-btn",
+                                           color="secondary", outline=True, size="sm"),
+                                className="text-end mb-1",
                             ),
                             dcc.Graph(id="heatmap-chart", config={"displaylogo": False, "responsive": True}),
 
@@ -1255,6 +1306,13 @@ def create_layout():
             dcc.Store(id="weights-store"),
             dcc.Store(id="walk-forward-store"),
             dcc.Store(id="optimized-params-store"),
+
+            # Download components
+            dcc.Download(id="download-nav"),
+            dcc.Download(id="download-dd"),
+            dcc.Download(id="download-annual"),
+            dcc.Download(id="download-monthly"),
+            dcc.Download(id="download-holdings"),
 
             # Main layout
             dbc.Row(

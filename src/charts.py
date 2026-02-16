@@ -43,7 +43,7 @@ def create_nav_chart(
         autosize=True,
         hovermode='x unified',
         dragmode=False,
-        xaxis=dict(fixedrange=True),
+        xaxis=dict(fixedrange=True, hoverformat="%Y-%m-%d"),
         yaxis=dict(fixedrange=True),
         legend=dict(
             orientation="h",
@@ -99,7 +99,7 @@ def create_drawdown_chart(
         autosize=True,
         hovermode='x unified',
         dragmode=False,
-        xaxis=dict(fixedrange=True),
+        xaxis=dict(fixedrange=True, hoverformat="%Y-%m-%d"),
         yaxis=dict(fixedrange=True),
         margin=dict(l=40, r=20, t=40, b=40),
         showlegend=False,
@@ -325,7 +325,7 @@ def create_signal_category_table(
 
 def create_quantile_spread_chart(
     q_nav: pd.DataFrame,
-    title: str = "Q1 vs Q5 Spread",
+    title: str = "Top vs Bottom Quantile Spread",
     height: int = 400,
 ) -> go.Figure:
     """
@@ -372,6 +372,122 @@ def create_quantile_spread_chart(
     return fig
 
 
+def create_annual_returns_chart(
+    annual_rets: pd.DataFrame,
+    title: str = "Annual Returns",
+    height: int = 400,
+) -> go.Figure:
+    """Create grouped bar chart of annual returns.
+
+    Args:
+        annual_rets: DataFrame from metrics.annual_returns() (years x columns)
+        title: Chart title
+        height: Chart height in pixels
+
+    Returns:
+        Plotly Figure
+    """
+    import numpy as np
+
+    colors = px.colors.qualitative.Set2
+    fig = go.Figure()
+
+    for i, col in enumerate(annual_rets.columns):
+        vals = annual_rets[col].values
+        fig.add_trace(go.Bar(
+            x=[str(y) for y in annual_rets.index],
+            y=vals,
+            name=col,
+            marker_color=colors[i % len(colors)],
+            text=[f"{v:.1%}" for v in vals],
+            textposition="outside",
+            textfont=dict(size=10),
+            hovertemplate="Year: %{x}<br>" + col + ": %{y:.1%}<extra></extra>",
+        ))
+
+    fig.update_layout(
+        title=title,
+        xaxis_title="Year",
+        yaxis_title="Return",
+        yaxis_tickformat=".0%",
+        barmode="group",
+        height=height,
+        autosize=True,
+        dragmode=False,
+        xaxis=dict(fixedrange=True),
+        yaxis=dict(fixedrange=True),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        margin=dict(l=40, r=20, t=40, b=40),
+    )
+
+    return fig
+
+
+def create_monthly_returns_table(
+    monthly_rets: pd.DataFrame,
+    title: str = "Monthly Returns",
+    height: int = None,
+) -> go.Figure:
+    """Create annotated heatmap of monthly returns (year x month).
+
+    Args:
+        monthly_rets: DataFrame from metrics.monthly_returns() (year x 1..12)
+        title: Chart title
+        height: Chart height in pixels (auto-calculated if None)
+
+    Returns:
+        Plotly Figure
+    """
+    import numpy as np
+
+    month_labels = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                    "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+
+    z = monthly_rets.values * 100  # convert to percentage for display
+    years = [str(y) for y in monthly_rets.index]
+
+    # Annotation text
+    text = []
+    for row in z:
+        row_text = []
+        for v in row:
+            if np.isnan(v):
+                row_text.append("")
+            else:
+                row_text.append(f"{v:.1f}%")
+        text.append(row_text)
+
+    if height is None:
+        height = max(300, len(years) * 35 + 80)
+
+    fig = go.Figure(data=go.Heatmap(
+        z=z,
+        x=month_labels,
+        y=years,
+        colorscale="RdYlGn",
+        zmid=0,
+        text=text,
+        texttemplate="%{text}",
+        textfont=dict(size=11),
+        hovertemplate="Year: %{y}<br>Month: %{x}<br>Return: %{text}<extra></extra>",
+        showscale=False,
+        xgap=1,
+        ygap=1,
+    ))
+
+    fig.update_layout(
+        title=title,
+        height=height,
+        autosize=True,
+        dragmode=False,
+        xaxis=dict(fixedrange=True, side="top"),
+        yaxis=dict(fixedrange=True, autorange="reversed"),
+        margin=dict(l=60, r=20, t=60, b=20),
+    )
+
+    return fig
+
+
 def create_returns_table(stats: pd.DataFrame) -> go.Figure:
     """
     Create a formatted table for performance statistics.
@@ -407,7 +523,7 @@ def create_returns_table(stats: pd.DataFrame) -> go.Figure:
             fill_color='darkblue',
             font=dict(color='white', size=14),
             align='left',
-            height=35,
+            height=50,
         ),
         cells=dict(
             values=[formatted.index] + [formatted[col] for col in formatted.columns],
@@ -420,7 +536,7 @@ def create_returns_table(stats: pd.DataFrame) -> go.Figure:
 
     # Calculate height based on number of rows
     n_rows = len(formatted.index)
-    table_height = 35 + (n_rows * 30) + 20  # header + rows + padding
+    table_height = 50 + (n_rows * 30) + 20  # header + rows + padding
 
     fig.update_layout(
         margin=dict(l=0, r=0, t=0, b=0),
