@@ -18,6 +18,14 @@ TICKER_PRESETS = {
         # iShares(and Schwab) factor ETFs
         'MTUM', 'QUAL', 'VLUE', 'SIZE', 'USMV', 'SCHD',
     ],
+    "Global Multi-Asset": [
+        # Equities
+        'SPY', 'QQQ', 'MGK', 'MGV', 'EFA', 'EEM', '069500.KS', 'MCHI',
+        # Bonds
+        'BND', 'BNDX', 'LQD', 'USHY', 'SHV', 'TLT',
+        # Alternatives
+        'GLD', 'SLV', 'GSG', 'IYR',
+    ],
     "Top Trend": [
         # Korea
         '091160.KS', '305720.KS', '385510.KS', '445290.KS', '0080G0.KS', '228790.KS', '0115D0.KS', '487240.KS', '266420.KS', '462900.KS',
