@@ -24,7 +24,7 @@ TICKER_PRESETS = {
         # Bonds
         'BND', 'BNDX', 'LQD', 'USHY', 'SHV', 'TLT',
         # Alternatives
-        'GLD', 'SLV', 'GSG', 'IYR',
+        'GLD', 'GSG', 'IYR',
     ],
     "Top Trend": [
         # Korea
