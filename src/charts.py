@@ -325,6 +325,7 @@ def create_signal_category_table(
 
 def create_quantile_spread_chart(
     q_nav: pd.DataFrame,
+    top_q: str = "Q5",
     title: str = "Top vs Bottom Quantile Spread",
     height: int = 400,
 ) -> go.Figure:
@@ -333,16 +334,17 @@ def create_quantile_spread_chart(
 
     Args:
         q_nav: Quantile NAV DataFrame
+        top_q: Top quantile column name (e.g. "Q3", "Q5", "Q10")
         title: Chart title
         height: Chart height in pixels
 
     Returns:
         Plotly Figure
     """
-    if 'Q1' not in q_nav.columns or 'Q5' not in q_nav.columns:
+    if 'Q1' not in q_nav.columns or top_q not in q_nav.columns:
         return go.Figure()
 
-    spread = q_nav['Q5'] - q_nav['Q1']
+    spread = q_nav[top_q] - q_nav['Q1']
 
     fig = go.Figure()
 
@@ -350,7 +352,7 @@ def create_quantile_spread_chart(
         x=spread.index,
         y=spread,
         mode='lines',
-        name='Q5 - Q1 Spread',
+        name=f'{top_q} - Q1 Spread',
         line=dict(color='lightblue', width=2),
         fill='tozeroy',
     ))

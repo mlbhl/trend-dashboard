@@ -559,6 +559,9 @@ def create_sidebar_content():
             ),
             html.Hr(),
 
+            # Ticker count validation warning
+            html.Div(id="ticker-thresh-warning", className="mb-2"),
+
             # Run Analysis Button
             html.Div(
                 id="run-analysis-btn-container",

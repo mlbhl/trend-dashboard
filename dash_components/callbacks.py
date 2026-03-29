@@ -546,6 +546,35 @@ def register_callbacks(app):
         raise PreventUpdate
 
     # =========================================================================
+    # Ticker Count vs Thresh Validation
+    # =========================================================================
+
+    @app.callback(
+        Output("ticker-thresh-warning", "children"),
+        Output("run-analysis-btn", "disabled", allow_duplicate=True),
+        Output("optimize-btn", "disabled", allow_duplicate=True),
+        Output("walk-forward-btn", "disabled", allow_duplicate=True),
+        Input("ticker-store", "data"),
+        Input("thresh-slider", "value"),
+        prevent_initial_call=True,
+    )
+    def validate_ticker_count(selected_tickers, thresh):
+        tickers = selected_tickers or []
+        n = len(tickers)
+        if n < thresh:
+            warning = dbc.Alert(
+                [
+                    html.I(className="fas fa-exclamation-triangle me-2"),
+                    f"Selected tickers ({n}) < Min Valid Tickers ({thresh}). "
+                    "Please add more tickers or lower the threshold.",
+                ],
+                color="warning",
+                className="py-2 mb-0",
+            )
+            return warning, True, True, True
+        return None, False, False, False
+
+    # =========================================================================
     # Main Analysis Callback
     # =========================================================================
 
@@ -1012,9 +1041,11 @@ def register_callbacks(app):
         monthly_default = navs.columns[0]
 
         # Quantile Spread (only for Quantile strategy)
-        if params["strategy_type"] == "Quantile" and "Q1" in navs.columns and "Q5" in navs.columns:
+        n_q = params.get("n_quantiles", 5)
+        top_q = f"Q{n_q}"
+        if params["strategy_type"] == "Quantile" and "Q1" in navs.columns and top_q in navs.columns:
             spread_style = {"display": "block"}
-            fig_spread = create_quantile_spread_chart(navs)
+            fig_spread = create_quantile_spread_chart(navs, top_q=top_q)
         else:
             spread_style = {"display": "none"}
             fig_spread = go.Figure()
