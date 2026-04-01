@@ -10,7 +10,7 @@ import dash_bootstrap_components as dbc
 import plotly.graph_objects as go
 from pandas.tseries.offsets import BMonthBegin
 
-from src.config import TICKER_PRESETS, DEFAULT_PRESET, WEIGHT_METHODS
+from src.config import TICKER_PRESETS, DEFAULT_PRESET, WEIGHT_METHODS, TICKER_DESCRIPTIONS
 from src.data import load_price_data
 from src.signals import generate_signal, get_signal_ranking
 from src.portfolio import (
@@ -26,6 +26,7 @@ from src.charts import (
     create_nav_chart,
     create_drawdown_chart,
     create_holding_heatmap,
+    create_quantile_holding_heatmap,
     create_signal_category_table,
     create_quantile_spread_chart,
     create_returns_table,
@@ -1057,7 +1058,7 @@ def register_callbacks(app):
                 {"label": f"Q{q}", "value": f"Q{q}"} for q in range(n_q, 0, -1)
             ]
             default_quantile = f"Q{n_q}"
-            quantile_selector_style = {"display": "block"}
+            quantile_selector_style = {"display": "none"}
         else:
             strat_name = "All" if params["top_k"] is None else f"Top-{params['top_k']}"
             quantile_options = [{"label": strat_name, "value": strat_name}]
@@ -1065,22 +1066,43 @@ def register_callbacks(app):
             quantile_selector_style = {"display": "none"}
 
         # Heatmap
-        wgt_json = weights_data.get(default_quantile)
-        if wgt_json:
-            wgt = pd.read_json(wgt_json)
-            wgt.index = pd.to_datetime(wgt.index)
-            wgt = wgt.sort_index()
-            wgt.index = wgt.index + BMonthBegin(1)
-            recent_wgt = wgt.iloc[-36:]
-            n_tickers = len(recent_wgt.columns)
+        if params["strategy_type"] == "Quantile":
+            # Combined quantile heatmap with all quantiles color-coded
+            q_wgts = {}
+            for q_name, wgt_json in weights_data.items():
+                wgt = pd.read_json(wgt_json)
+                wgt.index = pd.to_datetime(wgt.index)
+                wgt = wgt.sort_index()
+                wgt.index = wgt.index + BMonthBegin(1)
+                q_wgts[q_name] = wgt.iloc[-24:]
+            all_tickers = set()
+            for wgt in q_wgts.values():
+                all_tickers.update(wgt.columns)
+            n_tickers = len(all_tickers)
             chart_height = max(500, n_tickers * 25)
-            fig_heatmap = create_holding_heatmap(
-                recent_wgt,
-                title=f"Monthly Holdings - {default_quantile} (Last 36 Months)",
+            fig_heatmap = create_quantile_holding_heatmap(
+                q_wgts,
+                title="Monthly Holdings by Quantile",
                 height=chart_height,
+                ticker_descriptions=TICKER_DESCRIPTIONS,
             )
         else:
-            fig_heatmap = go.Figure()
+            wgt_json = weights_data.get(default_quantile)
+            if wgt_json:
+                wgt = pd.read_json(wgt_json)
+                wgt.index = pd.to_datetime(wgt.index)
+                wgt = wgt.sort_index()
+                wgt.index = wgt.index + BMonthBegin(1)
+                recent_wgt = wgt.iloc[-24:]
+                n_tickers = len(recent_wgt.columns)
+                chart_height = max(500, n_tickers * 25)
+                fig_heatmap = create_holding_heatmap(
+                    recent_wgt,
+                    title="Monthly Holdings",
+                    height=chart_height,
+                )
+            else:
+                fig_heatmap = go.Figure()
 
         # Stats Table
         stats = summary_stats(navs)
@@ -1143,6 +1165,10 @@ def register_callbacks(app):
         if not selected_quantile or not weights_data or not params:
             raise PreventUpdate
 
+        # In Quantile mode, combined heatmap is shown; skip individual update
+        if params.get("strategy_type") == "Quantile":
+            raise PreventUpdate
+
         wgt_json = weights_data.get(selected_quantile)
         if not wgt_json:
             raise PreventUpdate
@@ -1151,13 +1177,13 @@ def register_callbacks(app):
         wgt.index = pd.to_datetime(wgt.index)
         wgt = wgt.sort_index()
         wgt.index = wgt.index + BMonthBegin(1)
-        recent_wgt = wgt.iloc[-36:]
+        recent_wgt = wgt.iloc[-24:]
         n_tickers = len(recent_wgt.columns)
         chart_height = max(500, n_tickers * 25)
 
         fig_heatmap = create_holding_heatmap(
             recent_wgt,
-            title=f"Monthly Holdings - {selected_quantile} (Last 36 Months)",
+            title=f"Monthly Holdings - {selected_quantile}",
             height=chart_height,
         )
 
@@ -1175,6 +1201,58 @@ def register_callbacks(app):
             info = None
 
         return fig_heatmap, info
+
+    @app.callback(
+        Output("heatmap-chart", "figure", allow_duplicate=True),
+        Input("heatmap-label-toggle", "value"),
+        State("weights-store", "data"),
+        State("params-store", "data"),
+        State("heatmap-quantile-select", "value"),
+        prevent_initial_call=True,
+    )
+    def update_heatmap_label(label_mode, weights_data, params, selected_quantile):
+        """Toggle y-axis labels between ticker and name."""
+        if not weights_data or not params:
+            raise PreventUpdate
+
+        use_name = label_mode == "name"
+
+        if params["strategy_type"] == "Quantile":
+            q_wgts = {}
+            for q_name, wgt_json in weights_data.items():
+                wgt = pd.read_json(wgt_json)
+                wgt.index = pd.to_datetime(wgt.index)
+                wgt = wgt.sort_index()
+                wgt.index = wgt.index + BMonthBegin(1)
+                q_wgts[q_name] = wgt.iloc[-24:]
+            all_tickers = set()
+            for wgt in q_wgts.values():
+                all_tickers.update(wgt.columns)
+            n_tickers = len(all_tickers)
+            chart_height = max(500, n_tickers * 25)
+            return create_quantile_holding_heatmap(
+                q_wgts,
+                title="Monthly Holdings by Quantile",
+                height=chart_height,
+                ticker_descriptions=TICKER_DESCRIPTIONS,
+                use_name=use_name,
+            )
+        else:
+            wgt_json = weights_data.get(selected_quantile)
+            if not wgt_json:
+                raise PreventUpdate
+            wgt = pd.read_json(wgt_json)
+            wgt.index = pd.to_datetime(wgt.index)
+            wgt = wgt.sort_index()
+            wgt.index = wgt.index + BMonthBegin(1)
+            recent_wgt = wgt.iloc[-24:]
+            n_tickers = len(recent_wgt.columns)
+            chart_height = max(500, n_tickers * 25)
+            return create_holding_heatmap(
+                recent_wgt,
+                title="Monthly Holdings",
+                height=chart_height,
+            )
 
     # =========================================================================
     # Monthly Returns Heatmap Callback
@@ -1298,22 +1376,34 @@ def register_callbacks(app):
         Input("dl-holdings-btn", "n_clicks"),
         State("weights-store", "data"),
         State("heatmap-quantile-select", "value"),
+        State("params-store", "data"),
         prevent_initial_call=True,
     )
-    def download_holdings(n_clicks, weights_data, selected_quantile):
+    def download_holdings(n_clicks, weights_data, selected_quantile, params):
         """Download holdings/weights data as Excel."""
-        if not n_clicks or not weights_data or not selected_quantile:
+        if not n_clicks or not weights_data:
             raise PreventUpdate
         from io import BytesIO
-        wgt_json = weights_data.get(selected_quantile)
-        if not wgt_json:
-            raise PreventUpdate
-        wgt = pd.read_json(wgt_json)
-        wgt.index = pd.to_datetime(wgt.index)
-        wgt = wgt.sort_index()
-        wgt.index = wgt.index + BMonthBegin(1)
         buf = BytesIO()
-        wgt.to_excel(buf, index=True, sheet_name="Holdings")
+        if params and params.get("strategy_type") == "Quantile":
+            with pd.ExcelWriter(buf) as writer:
+                for q_name in sorted(weights_data.keys(), key=lambda x: int(x[1:])):
+                    wgt = pd.read_json(weights_data[q_name])
+                    wgt.index = pd.to_datetime(wgt.index)
+                    wgt = wgt.sort_index()
+                    wgt.index = wgt.index + BMonthBegin(1)
+                    wgt.to_excel(writer, index=True, sheet_name=q_name)
+        else:
+            if not selected_quantile:
+                raise PreventUpdate
+            wgt_json = weights_data.get(selected_quantile)
+            if not wgt_json:
+                raise PreventUpdate
+            wgt = pd.read_json(wgt_json)
+            wgt.index = pd.to_datetime(wgt.index)
+            wgt = wgt.sort_index()
+            wgt.index = wgt.index + BMonthBegin(1)
+            wgt.to_excel(buf, index=True, sheet_name="Holdings")
         buf.seek(0)
         return dcc.send_bytes(buf.getvalue(), "holdings_data.xlsx")
 

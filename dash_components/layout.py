@@ -1208,10 +1208,29 @@ def create_main_content():
                                     ),
                                 ],
                             ),
-                            html.Div(
-                                dbc.Button(html.I(className="fas fa-download"), id="dl-holdings-btn",
-                                           color="secondary", outline=True, size="sm"),
-                                className="text-end mb-1",
+                            dbc.Row(
+                                [
+                                    dbc.Col(
+                                        dbc.RadioItems(
+                                            id="heatmap-label-toggle",
+                                            options=[
+                                                {"label": "Ticker", "value": "ticker"},
+                                                {"label": "Name", "value": "name"},
+                                            ],
+                                            value="ticker",
+                                            inline=True,
+                                            className="mb-0",
+                                        ),
+                                        width="auto",
+                                    ),
+                                    dbc.Col(
+                                        dbc.Button(html.I(className="fas fa-download"), id="dl-holdings-btn",
+                                                   color="secondary", outline=True, size="sm"),
+                                        width="auto",
+                                        className="ms-auto",
+                                    ),
+                                ],
+                                className="mb-1 align-items-center",
                             ),
                             dcc.Graph(id="heatmap-chart", config={"displaylogo": False, "responsive": True}),
 

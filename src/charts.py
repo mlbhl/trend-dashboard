@@ -235,6 +235,178 @@ def create_holding_heatmap(
     return fig
 
 
+def create_quantile_holding_heatmap(
+    weights_dict: dict[str, pd.DataFrame],
+    title: str = "Monthly Holdings by Quantile",
+    height: int = 500,
+    ticker_descriptions: dict[str, str] | None = None,
+    use_name: bool = False,
+) -> go.Figure:
+    """
+    Create heatmap showing all quantiles at once with different colors.
+
+    Args:
+        weights_dict: Dict mapping quantile name (e.g. "Q1") to weight DataFrame
+        title: Chart title
+        height: Chart height in pixels
+        ticker_descriptions: Dict mapping ticker to description name
+        use_name: If True, show description names on y-axis instead of tickers
+
+    Returns:
+        Plotly Figure
+    """
+    import numpy as np
+
+    n_q = len(weights_dict)
+    quantile_names = sorted(weights_dict.keys(), key=lambda x: int(x[1:]))
+
+    # Collect all tickers and dates across all quantiles
+    all_tickers = set()
+    all_dates = None
+    for wgt in weights_dict.values():
+        all_tickers.update(wgt.columns)
+        if all_dates is None:
+            all_dates = wgt.index
+    dates = pd.to_datetime(all_dates).sort_values()
+
+    # Sort tickers by most recent quantile assignment (high Q first), then alphabetically
+    last_date = dates[-1]
+    ticker_q = {}
+    for q_name in quantile_names:
+        q_num = int(q_name[1:])
+        wgt_df = weights_dict[q_name]
+        wgt_df_idx = pd.to_datetime(wgt_df.index)
+        if last_date in wgt_df_idx:
+            row = wgt_df.loc[wgt_df.index[wgt_df_idx == last_date][0]]
+            for ticker in row.index[row.abs() > 1e-10]:
+                ticker_q[ticker] = q_num
+    all_tickers = sorted(all_tickers, key=lambda t: (-ticker_q.get(t, 0), t))
+
+    # Build y-axis labels
+    desc = ticker_descriptions or {}
+    if use_name:
+        y_labels = [desc.get(t, t) for t in all_tickers]
+    else:
+        y_labels = list(all_tickers)
+
+    # Build quantile assignment matrix (ticker x date) using vectorized ops
+    quantile_matrix = pd.DataFrame(np.nan, index=all_tickers, columns=dates)
+    weight_matrix = pd.DataFrame(0.0, index=all_tickers, columns=dates)
+
+    for q_name in quantile_names:
+        q_num = int(q_name[1:])
+        wgt_df = weights_dict[q_name].copy()
+        wgt_df.index = pd.to_datetime(wgt_df.index)
+        wgt_t = wgt_df.T.reindex(index=all_tickers, columns=dates)
+        held = wgt_t.abs() > 1e-10
+        quantile_matrix[held] = q_num
+        weight_matrix[held] = wgt_t[held]
+
+    x_dates = dates
+    step = 3
+    tick_idx = list(range(0, len(x_dates), step))
+    tickvals = x_dates[tick_idx]
+    ticktext = [d.strftime("%y.%m") for d in tickvals]
+
+    # Build custom colorscale — mid-tone, clear but not harsh
+    _palette = [
+        "#e06666",  # muted red (worst)
+        "#f0a050",  # warm orange
+        "#b8b8b8",  # medium gray
+        "#6fbf6f",  # medium green
+        "#6fa8dc",  # medium blue (best)
+    ]
+    if n_q <= len(_palette):
+        # Pick evenly spaced colors: worst=red ... best=blue
+        indices = [int(i * (len(_palette) - 1) / (n_q - 1)) for i in range(n_q)] if n_q > 1 else [2]
+        colors = [_palette[i] for i in indices]
+    else:
+        colors = px.colors.qualitative.Set1[:n_q]
+    colorscale = []
+    for i in range(n_q):
+        lo = i / n_q
+        hi = (i + 1) / n_q
+        colorscale.append([lo, colors[i]])
+        colorscale.append([hi, colors[i]])
+
+    # Custom hover text (always show both ticker and name)
+    q_matrix_vals = quantile_matrix.values
+    w_matrix_vals = weight_matrix.values
+    hover_text = []
+    for i, ticker in enumerate(all_tickers):
+        name = desc.get(ticker, ticker)
+        row = []
+        for j, dt in enumerate(dates):
+            q_val = q_matrix_vals[i, j]
+            w_val = w_matrix_vals[i, j]
+            if np.isnan(q_val):
+                row.append("")
+            else:
+                row.append(
+                    f"{ticker} ({name})<br>Date: {dt.strftime('%y.%m')}"
+                    f"<br>Q{int(q_val)}<br>Weight: {w_val:.2%}"
+                )
+        hover_text.append(row)
+
+    fig = go.Figure(data=go.Heatmap(
+        z=q_matrix_vals,
+        x=x_dates,
+        y=y_labels,
+        colorscale=colorscale,
+        zmin=1,
+        zmax=n_q,
+        xgap=0.5,
+        ygap=0.5,
+        hovertext=hover_text,
+        hovertemplate='%{hovertext}<extra></extra>',
+        showscale=False,
+    ))
+
+    # Build legend text inline with title (highest quantile first)
+    legend_parts = []
+    for q_name in reversed(quantile_names):
+        q_num = int(q_name[1:])
+        color = colors[q_num - 1]
+        label = q_name
+        if q_num == n_q:
+            label += " (Best)"
+        elif q_num == 1:
+            label += " (Worst)"
+        legend_parts.append(f"<span style='color:{color}'>\u25a0</span> {label}")
+    legend_str = "&nbsp;&nbsp;".join(legend_parts)
+    title_with_legend = f"{title}&nbsp;&nbsp;&nbsp;&nbsp;{legend_str}"
+
+    fig.update_layout(
+        title=dict(text=title_with_legend, font=dict(size=16)),
+        xaxis_title="Month",
+        yaxis_title="",
+        height=height,
+        autosize=True,
+        dragmode=False,
+        font=dict(size=13),
+        xaxis=dict(
+            type="date",
+            tickmode="array",
+            tickvals=tickvals,
+            ticktext=ticktext,
+            tickangle=45,
+            tickfont=dict(size=14),
+            fixedrange=True,
+        ),
+        yaxis=dict(
+            tickmode='linear',
+            tick0=0,
+            dtick=1,
+            autorange="reversed",
+            tickfont=dict(size=14),
+            fixedrange=True,
+        ),
+        margin=dict(l=60, r=20, t=40, b=60),
+    )
+
+    return fig
+
+
 def create_signal_category_table(
     signal: pd.Series,
     n_quantiles: int = 5,
