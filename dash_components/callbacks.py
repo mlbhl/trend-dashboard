@@ -1085,6 +1085,7 @@ def register_callbacks(app):
                 title="Monthly Holdings by Quantile",
                 height=chart_height,
                 ticker_descriptions=TICKER_DESCRIPTIONS,
+                signal=signal,
             )
         else:
             wgt_json = weights_data.get(default_quantile)
@@ -1207,10 +1208,11 @@ def register_callbacks(app):
         Input("heatmap-label-toggle", "value"),
         State("weights-store", "data"),
         State("params-store", "data"),
+        State("signal-store", "data"),
         State("heatmap-quantile-select", "value"),
         prevent_initial_call=True,
     )
-    def update_heatmap_label(label_mode, weights_data, params, selected_quantile):
+    def update_heatmap_label(label_mode, weights_data, params, signal_json, selected_quantile):
         """Toggle y-axis labels between ticker and name."""
         if not weights_data or not params:
             raise PreventUpdate
@@ -1225,6 +1227,11 @@ def register_callbacks(app):
                 wgt = wgt.sort_index()
                 wgt.index = wgt.index + BMonthBegin(1)
                 q_wgts[q_name] = wgt.iloc[-24:]
+            sig = None
+            if signal_json:
+                sig = pd.read_json(signal_json)
+                sig.index = pd.to_datetime(sig.index)
+                sig = sig.sort_index()
             all_tickers = set()
             for wgt in q_wgts.values():
                 all_tickers.update(wgt.columns)
@@ -1236,6 +1243,7 @@ def register_callbacks(app):
                 height=chart_height,
                 ticker_descriptions=TICKER_DESCRIPTIONS,
                 use_name=use_name,
+                signal=sig,
             )
         else:
             wgt_json = weights_data.get(selected_quantile)

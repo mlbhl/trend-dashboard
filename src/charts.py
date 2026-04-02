@@ -241,6 +241,7 @@ def create_quantile_holding_heatmap(
     height: int = 500,
     ticker_descriptions: dict[str, str] | None = None,
     use_name: bool = False,
+    signal: pd.DataFrame | None = None,
 ) -> go.Figure:
     """
     Create heatmap showing all quantiles at once with different colors.
@@ -251,6 +252,7 @@ def create_quantile_holding_heatmap(
         height: Chart height in pixels
         ticker_descriptions: Dict mapping ticker to description name
         use_name: If True, show description names on y-axis instead of tickers
+        signal: Signal DataFrame with rankings (rank 1 = best). Used for y-axis sorting.
 
     Returns:
         Plotly Figure
@@ -269,7 +271,8 @@ def create_quantile_holding_heatmap(
             all_dates = wgt.index
     dates = pd.to_datetime(all_dates).sort_values()
 
-    # Sort tickers by most recent quantile assignment (high Q first), then alphabetically
+    # Sort tickers by quantile (high Q first), then by signal score within quantile
+    # Signal has rankings where rank 1 = best (lowest = better)
     last_date = dates[-1]
     ticker_q = {}
     for q_name in quantile_names:
@@ -280,7 +283,21 @@ def create_quantile_holding_heatmap(
             row = wgt_df.loc[wgt_df.index[wgt_df_idx == last_date][0]]
             for ticker in row.index[row.abs() > 1e-10]:
                 ticker_q[ticker] = q_num
-    all_tickers = sorted(all_tickers, key=lambda t: (-ticker_q.get(t, 0), t))
+
+    # Get latest signal ranking for sorting within quantile
+    ticker_rank = {}
+    if signal is not None and len(signal) > 0:
+        last_signal = signal.iloc[-1]
+        for ticker in all_tickers:
+            if ticker in last_signal.index and pd.notna(last_signal[ticker]):
+                ticker_rank[ticker] = last_signal[ticker]
+
+    # Sort: high Q first, within same Q lower rank (better) first
+    max_rank = len(all_tickers) + 1
+    all_tickers = sorted(
+        all_tickers,
+        key=lambda t: (-ticker_q.get(t, 0), ticker_rank.get(t, max_rank)),
+    )
 
     # Build y-axis labels
     desc = ticker_descriptions or {}
