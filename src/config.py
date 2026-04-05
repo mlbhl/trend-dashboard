@@ -8,7 +8,9 @@ TICKER_PRESETS = {
         # US style (7)
         'MGK', 'MGV', 'IWM', 'SCHD', 'USMV', 'MTUM', 'QUAL',
         # Global sector and theme (9)
-        'GDX', 'URA', 'IXN', '372330.KS', '283580.KS', 'IGF', 'BOTZ', 'SKYY', 'ICLN',
+        'GDX', 'URA', 'IXN', '372330.KS', '283580.KS', '487230.KS', 'IGF', 'BOTZ', 'SKYY', 'ICLN',
+        # US sector (10)
+        'XLK', 'XLC', 'XLF', 'XLE', 'XLV', 'XLI', 'XLY', 'XLP', 'XLB', 'XLU',
     ],
     "US Sector": [
         # SPDR sector ETFs
@@ -56,6 +58,7 @@ TICKER_DESCRIPTIONS = {
     'IXN': 'Global Tech',
     '372330.KS': 'China HSI Tech',
     '283580.KS': 'China CSI 300',
+    '487230.KS': 'US AI Power-Infra',
     'IGF': 'Global Infrastructure',
     'BOTZ': 'Robotics & AI',
     'SKYY': 'Cloud Computing',
@@ -80,11 +83,10 @@ TICKER_DESCRIPTIONS = {
     '0080G0.KS': 'Korea Defense',
     '228790.KS': 'Korea Cosmetics',
     '0115D0.KS': 'Korea Ships',
-    '487240.KS': 'Korea AI Infra',
+    '487240.KS': 'Korea AI Power-Infra',
     '266420.KS': 'Korea Health',
     '462900.KS': 'Korea Bio',
     '390390.KS': 'US Semis',
-    '487230.KS': 'US AI Infra',
     '485540.KS': 'US AI Tech',
     '0038A0.KS': 'US Humanoid',
     '0065G0.KS': 'China Tech',
