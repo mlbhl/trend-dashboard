@@ -132,10 +132,13 @@ def compute_weight_quantile(
         if s.nunique() == 1:
             continue
 
-        qlabel = pd.qcut(
-            s.rank(method="first", ascending=False),
-            q=n_quantiles,
-            labels=[f"Q{i}" for i in range(1, n_quantiles + 1)]
+        pct = s.rank(pct=True)
+        bins = np.linspace(0, 1, n_quantiles + 1)
+        qlabel = pd.cut(
+            pct,
+            bins=bins,
+            labels=[f"Q{i}" for i in range(n_quantiles, 0, -1)],
+            include_lowest=True,
         )
 
         for q in qlabel.unique():

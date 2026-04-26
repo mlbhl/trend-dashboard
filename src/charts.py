@@ -446,12 +446,15 @@ def create_signal_category_table(
     signal = signal.dropna()
     n = len(signal)
 
-    # Assign quantiles: rank 1 (best) -> Q5, worst rank -> Q1
-    # Match portfolio.py logic: ascending=False means lower signal values get higher ranks
-    quantile_labels = pd.qcut(
-        signal.rank(method="first", ascending=False),
-        q=n_quantiles,
-        labels=[f"Q{i}" for i in range(1, n_quantiles + 1)]
+    # Assign quantiles: best signal -> Q5, worst -> Q1
+    # Ties are kept together via percentile rank (average) + fixed-bin pd.cut
+    pct = signal.rank(pct=True)
+    bins = np.linspace(0, 1, n_quantiles + 1)
+    quantile_labels = pd.cut(
+        pct,
+        bins=bins,
+        labels=[f"Q{i}" for i in range(n_quantiles, 0, -1)],
+        include_lowest=True,
     )
 
     # Group tickers by quantile
