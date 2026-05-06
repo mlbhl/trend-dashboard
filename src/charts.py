@@ -170,6 +170,8 @@ def create_holding_heatmap(
     weight: pd.DataFrame,
     title: str = "Monthly Holdings",
     height: int = 500,
+    ticker_descriptions: dict[str, str] | None = None,
+    use_name: bool = False,
 ) -> go.Figure:
     """
     Create heatmap for monthly holdings.
@@ -178,11 +180,13 @@ def create_holding_heatmap(
         weight: Portfolio weights DataFrame
         title: Chart title
         height: Chart height in pixels
+        ticker_descriptions: Dict mapping ticker to description name
+        use_name: If True, show description names on y-axis instead of tickers
 
     Returns:
         Plotly Figure
     """
-    
+
     w = weight.copy()
     w.index = pd.to_datetime(w.index)
 
@@ -191,26 +195,34 @@ def create_holding_heatmap(
     weight_t = w.T
     x_dates = pd.to_datetime(weight_t.columns)
 
-    step = 3
-    tick_idx = list(range(0, len(x_dates), step))
-    tickvals = x_dates[tick_idx]
+    tickvals = x_dates
     ticktext = [d.strftime("%y.%m") for d in tickvals]
+
+    desc = ticker_descriptions or {}
+    tickers = list(weight_t.index)
+    if use_name:
+        y_labels = [desc.get(t, t) for t in tickers]
+    else:
+        y_labels = tickers
+    n_cols = len(x_dates)
+    customdata = [[[t, desc.get(t, t)] for _ in range(n_cols)] for t in tickers]
 
     fig = go.Figure(data=go.Heatmap(
         z=weight_t.values,
         x=x_dates,
-        y=weight_t.index,
+        y=y_labels,
+        customdata=customdata,
         colorscale='Blues',
         xgap=0.1,
         ygap=0.1,
-        hovertemplate='Ticker: %{y}<br>Date: %{x|%y.%m}<br>Weight: %{z:.2%}<extra></extra>',
+        hovertemplate='Ticker: %{customdata[0]}<br>Name: %{customdata[1]}<br>Date: %{x|%y.%m}<br>Weight: %{z:.2%}<extra></extra>',
         showscale=False,
     ))
 
     fig.update_layout(
         title=title,
         xaxis_title="Month",
-        yaxis_title="Ticker",
+        yaxis_title="Name" if use_name else "Ticker",
         height=height,
         autosize=True,
         dragmode=False,
@@ -320,9 +332,7 @@ def create_quantile_holding_heatmap(
         weight_matrix[held] = wgt_t[held]
 
     x_dates = dates
-    step = 3
-    tick_idx = list(range(0, len(x_dates), step))
-    tickvals = x_dates[tick_idx]
+    tickvals = x_dates
     ticktext = [d.strftime("%y.%m") for d in tickvals]
 
     # Build custom colorscale — mid-tone, clear but not harsh

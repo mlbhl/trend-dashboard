@@ -1073,7 +1073,6 @@ def register_callbacks(app):
                 wgt = pd.read_json(wgt_json)
                 wgt.index = pd.to_datetime(wgt.index)
                 wgt = wgt.sort_index()
-                wgt.index = wgt.index + BMonthBegin(1)
                 q_wgts[q_name] = wgt.iloc[-24:]
             all_tickers = set()
             for wgt in q_wgts.values():
@@ -1093,7 +1092,6 @@ def register_callbacks(app):
                 wgt = pd.read_json(wgt_json)
                 wgt.index = pd.to_datetime(wgt.index)
                 wgt = wgt.sort_index()
-                wgt.index = wgt.index + BMonthBegin(1)
                 recent_wgt = wgt.iloc[-24:]
                 n_tickers = len(recent_wgt.columns)
                 chart_height = max(500, n_tickers * 25)
@@ -1159,9 +1157,10 @@ def register_callbacks(app):
         Input("heatmap-quantile-select", "value"),
         State("weights-store", "data"),
         State("params-store", "data"),
+        State("heatmap-label-toggle", "value"),
         prevent_initial_call=True,
     )
-    def update_heatmap_quantile(selected_quantile, weights_data, params):
+    def update_heatmap_quantile(selected_quantile, weights_data, params, label_mode):
         """Update heatmap when quantile selection changes."""
         if not selected_quantile or not weights_data or not params:
             raise PreventUpdate
@@ -1177,7 +1176,6 @@ def register_callbacks(app):
         wgt = pd.read_json(wgt_json)
         wgt.index = pd.to_datetime(wgt.index)
         wgt = wgt.sort_index()
-        wgt.index = wgt.index + BMonthBegin(1)
         recent_wgt = wgt.iloc[-24:]
         n_tickers = len(recent_wgt.columns)
         chart_height = max(500, n_tickers * 25)
@@ -1186,6 +1184,8 @@ def register_callbacks(app):
             recent_wgt,
             title=f"Monthly Holdings - {selected_quantile}",
             height=chart_height,
+            ticker_descriptions=TICKER_DESCRIPTIONS,
+            use_name=label_mode == "name",
         )
 
         # Quantile info
@@ -1225,7 +1225,6 @@ def register_callbacks(app):
                 wgt = pd.read_json(wgt_json)
                 wgt.index = pd.to_datetime(wgt.index)
                 wgt = wgt.sort_index()
-                wgt.index = wgt.index + BMonthBegin(1)
                 q_wgts[q_name] = wgt.iloc[-24:]
             sig = None
             if signal_json:
@@ -1252,7 +1251,6 @@ def register_callbacks(app):
             wgt = pd.read_json(wgt_json)
             wgt.index = pd.to_datetime(wgt.index)
             wgt = wgt.sort_index()
-            wgt.index = wgt.index + BMonthBegin(1)
             recent_wgt = wgt.iloc[-24:]
             n_tickers = len(recent_wgt.columns)
             chart_height = max(500, n_tickers * 25)
@@ -1260,6 +1258,8 @@ def register_callbacks(app):
                 recent_wgt,
                 title="Monthly Holdings",
                 height=chart_height,
+                ticker_descriptions=TICKER_DESCRIPTIONS,
+                use_name=use_name,
             )
 
     # =========================================================================
@@ -1399,7 +1399,6 @@ def register_callbacks(app):
                     wgt = pd.read_json(weights_data[q_name])
                     wgt.index = pd.to_datetime(wgt.index)
                     wgt = wgt.sort_index()
-                    wgt.index = wgt.index + BMonthBegin(1)
                     wgt.to_excel(writer, index=True, sheet_name=q_name)
         else:
             if not selected_quantile:
@@ -1410,7 +1409,6 @@ def register_callbacks(app):
             wgt = pd.read_json(wgt_json)
             wgt.index = pd.to_datetime(wgt.index)
             wgt = wgt.sort_index()
-            wgt.index = wgt.index + BMonthBegin(1)
             wgt.to_excel(buf, index=True, sheet_name="Holdings")
         buf.seek(0)
         return dcc.send_bytes(buf.getvalue(), "holdings_data.xlsx")

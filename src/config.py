@@ -4,13 +4,11 @@
 TICKER_PRESETS = {
     "Alpha (Default)": [
         # US industry and theme (8)
-        'SMH', 'IGV', 'XAR', 'XBI', 'XME', 'XOP', 'PAVE', 'ARKK',
-        # US style (7)
-        'MGK', 'MGV', 'IWM', 'SCHD', 'USMV', 'MTUM', 'QUAL',
-        # Global sector and theme (9)
-        'GDX', 'URA', 'IXN', '372330.KS', '283580.KS', '487230.KS', 'IGF', 'BOTZ', 'SKYY', 'ICLN',
-        # US sector (10)
-        'XLK', 'XLC', 'XLF', 'XLE', 'XLV', 'XLI', 'XLY', 'XLP', 'XLB', 'XLU',
+        'SMH', 'IGV', 'XAR', 'XBI', 'XME', 'XOP', 'PAVE', '487230.KS',
+        # US style (6)
+        'VLUE', 'SIZE', 'SCHD', 'USMV', 'MTUM', 'QUAL',
+        # Global industry and theme (6)
+        'GDX', '372330.KS', 'BOTZ', 'SKYY', 'ICLN', 'AIQ', 
     ],
     "US Sector": [
         # SPDR sector ETFs
@@ -58,7 +56,7 @@ TICKER_DESCRIPTIONS = {
     'IXN': 'Global Tech',
     '372330.KS': 'China HSI Tech',
     '283580.KS': 'China CSI 300',
-    '487230.KS': 'US AI Power-Infra',
+    '487230.KS': 'AI Power-Infra',
     'IGF': 'Global Infrastructure',
     'BOTZ': 'Robotics & AI',
     'SKYY': 'Cloud Computing',
@@ -99,7 +97,7 @@ TICKER_DESCRIPTIONS = {
 DEFAULT_START_DATE = '2000-01-01'
 DEFAULT_BACKTEST_START_DATE = '2015-01-01'
 DEFAULT_SHORT_WINDOW = 1
-DEFAULT_MID_WINDOW = 6
+DEFAULT_MID_WINDOW = 3
 DEFAULT_LONG_WINDOW = 11
 DEFAULT_SHORT_WEIGHT = 0.10
 DEFAULT_MID_WEIGHT = 0.10
