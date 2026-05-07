@@ -594,6 +594,7 @@ def register_callbacks(app):
         Input("run-analysis-btn", "n_clicks"),
         State("start-date", "date"),
         State("backtest-start-date", "date"),
+        State("backtest-end-date", "date"),
         State("ticker-store", "data"),
         State("thresh-slider", "value"),
         State("short-window-slider", "value"),
@@ -626,6 +627,7 @@ def register_callbacks(app):
         n_clicks,
         start_date,
         backtest_start_date,
+        backtest_end_date,
         selected_tickers,
         thresh,
         short_window,
@@ -890,7 +892,23 @@ def register_callbacks(app):
         else:
             display_start = navs.index[0]
 
-        navs_display = navs[display_start:].copy()
+        # Apply backtest end date
+        backtest_end = pd.to_datetime(backtest_end_date)
+        actual_end = navs.index[navs.index <= backtest_end]
+        if len(actual_end) > 0:
+            display_end = actual_end[-1]
+        else:
+            display_end = navs.index[-1]
+
+        navs_display = navs.loc[display_start:display_end].copy()
+        signal_display = signal.loc[:display_end].copy()
+        truncated_weights = {}
+        for q, wj in weights_data.items():
+            w = pd.read_json(wj)
+            w.index = pd.to_datetime(w.index)
+            w = w.sort_index().loc[:display_end]
+            truncated_weights[q] = w.to_json(date_format="iso")
+        weights_data = truncated_weights
 
         # Store params
         params = {
@@ -907,6 +925,7 @@ def register_callbacks(app):
             "tcost": tcost,
             "strategy_type": strategy_type,
             "backtest_start_date": str(backtest_start_date),
+            "backtest_end_date": str(backtest_end_date),
             "strategy_mode": strategy_mode,
             "core_ratio": core_ratio if is_core_satellite else None,
             "core_tickers": core_tickers_parsed if is_core_satellite else None,
@@ -921,7 +940,7 @@ def register_callbacks(app):
         dataset_json = dataset.to_json(date_format="iso")
         bm_data_json = bm_data.to_json(date_format="iso") if bm_data is not None else None
         navs_json = navs_display.to_json(date_format="iso")
-        signal_json = signal.to_json(date_format="iso")
+        signal_json = signal_display.to_json(date_format="iso")
 
         return (
             dataset_json,
