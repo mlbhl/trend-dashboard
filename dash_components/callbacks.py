@@ -840,10 +840,14 @@ def register_callbacks(app):
                     f"Core ({core_label})": core_nav_only,
                     f"Satellite ({strat_name})": sat_nav_only,
                 })
-                weights_data = {strat_name: sat_wgt.to_json(date_format="iso")}
+                sat_wgt_disp = sat_wgt.copy()
+                sat_wgt_disp.index = sat_wgt_disp.index + BMonthBegin(1)
+                weights_data = {strat_name: sat_wgt_disp.to_json(date_format="iso")}
             else:
                 navs = pd.DataFrame({strat_name: strat_nav})
-                weights_data = {strat_name: sat_wgt.to_json(date_format="iso")}
+                sat_wgt_disp = sat_wgt.copy()
+                sat_wgt_disp.index = sat_wgt_disp.index + BMonthBegin(1)
+                weights_data = {strat_name: sat_wgt_disp.to_json(date_format="iso")}
         else:
             q_nav, q_to, universe_bm_nav = run_quantile_backtest(
                 dataset,
@@ -858,7 +862,11 @@ def register_callbacks(app):
             q_wgts, _ = compute_weight_quantile(
                 dataset, signal, n_quantiles=n_quantiles, weight_method=weight_method
             )
-            weights_data = {q: wgt.to_json(date_format="iso") for q, wgt in q_wgts.items()}
+            weights_data = {}
+            for q, wgt in q_wgts.items():
+                wgt_disp = wgt.copy()
+                wgt_disp.index = wgt_disp.index + BMonthBegin(1)
+                weights_data[q] = wgt_disp.to_json(date_format="iso")
 
         # Handle benchmark
         if custom_bm_label and bm_data is not None:
