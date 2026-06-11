@@ -296,10 +296,14 @@ def create_quantile_holding_heatmap(
             for ticker in row.index[row.abs() > 1e-10]:
                 ticker_q[ticker] = q_num
 
-    # Get latest signal ranking for sorting within quantile
+    # Get signal ranking for sorting within quantile — use the signal row that
+    # produced the latest displayed weight column (BME signal -> BMB(1) implementation)
+    # to keep heatmap content and sort order aligned.
     ticker_rank = {}
     if signal is not None and len(signal) > 0:
-        last_signal = signal.iloc[-1]
+        shifted = pd.DatetimeIndex(signal.index) + pd.offsets.BMonthBegin(1)
+        mask = shifted <= last_date
+        last_signal = signal.loc[mask].iloc[-1] if mask.any() else signal.iloc[-1]
         for ticker in all_tickers:
             if ticker in last_signal.index and pd.notna(last_signal[ticker]):
                 ticker_rank[ticker] = last_signal[ticker]

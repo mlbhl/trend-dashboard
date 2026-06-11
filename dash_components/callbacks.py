@@ -909,7 +909,9 @@ def register_callbacks(app):
             display_end = navs.index[-1]
 
         navs_display = navs.loc[display_start:display_end].copy()
-        signal_display = signal.loc[:display_end].copy()
+        # Keep full signal (incl. tentative BME row using latest close) for Current Signal panel.
+        # Holdings heatmap uses weights-store (BMB-shifted + display_end-truncated), so confirmed-only there.
+        signal_display = signal.copy()
         truncated_weights = {}
         for q, wj in weights_data.items():
             w = pd.read_json(wj)
