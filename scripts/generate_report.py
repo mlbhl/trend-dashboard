@@ -6,6 +6,7 @@ scripts/run_daily_report.sh가 cron으로 매일 호출한다.
 """
 
 import sys
+from datetime import datetime
 from pathlib import Path
 
 import pandas as pd
@@ -38,6 +39,7 @@ from src.config import (
     DEFAULT_TOP_K,
     TICKER_PRESETS,
 )
+from src.data import load_price_data
 from src.metrics import (
     annual_returns,
     calculate_kpis,
@@ -269,3 +271,30 @@ def render_report_html(
         stats_fig_html=_fig_html(fig_stats),
         stats_df_html=stats_df_html,
     )
+
+
+def main() -> int:
+    tickers = TICKER_PRESETS[DEFAULT_PRESET]
+    print(f"가격 데이터 다운로드: {len(tickers)}개 티커, start={DEFAULT_START_DATE}")
+    dataset, missing = load_price_data(tickers, start_date=DEFAULT_START_DATE)
+
+    if len(dataset.columns) < 2:
+        print(f"ERROR: 유효 티커 부족 (missing: {missing})", file=sys.stderr)
+        return 1
+    if missing:
+        print(f"WARNING: 데이터 없음 — {', '.join(missing)}")
+
+    results = run_default_analysis(dataset)
+    now = datetime.now()
+    html = render_report_html(results, missing=missing, generated_at=pd.Timestamp(now))
+
+    outdir = PROJECT_ROOT / "reports"
+    outdir.mkdir(exist_ok=True)
+    out = outdir / f"report_{now:%Y-%m-%d}.html"
+    out.write_text(html, encoding="utf-8")
+    print(f"리포트 생성 완료: {out}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
