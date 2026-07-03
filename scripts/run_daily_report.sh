@@ -30,10 +30,10 @@ mkdir -p reports
     if [ "$code" -eq 0 ] && [ -f "$report" ]; then
       cp "$report" reports/latest.html
       git add reports
-      if git diff --staged --quiet; then
+      if git diff --staged --quiet -- reports; then
         echo "변경 없음 — 커밋 생략"
       else
-        git commit -m "Update daily report"
+        git commit -m "Update daily report" -- reports
         git push || echo "git push 실패 — 리포트 파일은 보존됨, 다음 커밋 때 함께 푸시"
       fi
     else

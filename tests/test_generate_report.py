@@ -68,3 +68,7 @@ def test_render_report_html_contains_all_sections():
         "Data not found for: FAKE",
     ]:
         assert expected in html, f"missing section: {expected}"
+
+    # plotly.js는 정확히 한 번만 CDN 로드 (embed 회귀 시 파일이 ~4MB로 불어남)
+    assert html.count("cdn.plot.ly") == 1
+    assert len(html) < 2_000_000
