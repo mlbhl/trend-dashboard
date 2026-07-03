@@ -31,3 +31,6 @@ Thumbs.db
 
 # Dash cache
 cache/
+
+# Daily report log
+reports/cron.log
