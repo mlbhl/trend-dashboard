@@ -68,7 +68,8 @@ ETF Scout의 `run_daily.sh` 패턴을 따른다:
 
 - cron 최소 환경 대응: `HOME`, `PATH` 명시
 - **멱등 가드:** `reports/report_$(date +%F).html` 존재 시 스킵
-- 프로젝트 venv의 python으로 `scripts/generate_report.py` 실행
+- `/home/byoun/miniconda3/bin/python3` (base env, 의존성 확인됨)으로
+  `scripts/generate_report.py` 실행
 - 성공 시 `reports/latest.html`로 복사
 - stdout/stderr를 `reports/cron.log`에 append (시작/종료 타임스탬프 포함)
 
