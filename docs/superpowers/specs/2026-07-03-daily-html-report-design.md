@@ -59,8 +59,9 @@ Current Signal용 tentative 시그널 행 유지.
 10. Stats 테이블 (summary_stats)
 
 **HTML output:** Plotly 차트는 `fig.to_html(full_html=False)`로 embed,
-plotly.js는 첫 차트에만 include. 테이블은 pandas `to_html` + 간단한 inline CSS.
-외부 리소스 의존 없는 단일 파일.
+plotly.js는 CDN 로드(`include_plotlyjs="cdn"`, 첫 차트에만) — 리포트를 git에
+커밋하므로 파일당 ~4MB(전체 embed) 대신 수백 KB로 유지한다.
+테이블은 pandas `to_html` + 간단한 inline CSS.
 
 ### 2. Runner — `scripts/run_daily_report.sh` (new)
 
@@ -71,14 +72,16 @@ ETF Scout의 `run_daily.sh` 패턴을 따른다:
 - `/home/byoun/miniconda3/bin/python3` (base env, 의존성 확인됨)으로
   `scripts/generate_report.py` 실행
 - 성공 시 `reports/latest.html`로 복사
+- **git 커밋/푸시:** `git add reports` → 변경 있으면 커밋(단일 라인 메시지
+  "Update daily report") 후 `git push` (ETF Scout `run_daily.sh` 패턴).
+  푸시 실패(원격 diverge 등) 시 로그에 남기고 종료 — 리포트 파일 자체는 보존됨
 - stdout/stderr를 `reports/cron.log`에 append (시작/종료 타임스탬프 포함)
 
 ### 3. Storage — `reports/`
 
-- `reports/report_YYYY-MM-DD.html` — 날짜별 누적
-- `reports/latest.html` — 최신본 덮어쓰기
-- `reports/cron.log` — 실행 로그
-- `reports/`를 `.gitignore`에 추가
+- `reports/report_YYYY-MM-DD.html` — 날짜별 누적, **git 커밋/푸시 대상**
+- `reports/latest.html` — 최신본 덮어쓰기, git 커밋/푸시 대상
+- `reports/cron.log` — 실행 로그, `.gitignore`에 추가 (로그는 커밋하지 않음)
 
 ### 4. Scheduling — WSL cron
 
