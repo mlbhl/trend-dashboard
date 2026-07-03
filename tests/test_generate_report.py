@@ -7,7 +7,7 @@ import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from scripts.generate_report import run_default_analysis
+from scripts.generate_report import render_report_html, run_default_analysis
 
 
 def make_dataset(n_tickers: int = 12, start: str = "2013-01-01", periods: int = 1300) -> pd.DataFrame:
@@ -43,3 +43,28 @@ def test_run_default_analysis_shapes():
     assert results["display_start"] == navs.index[0].strftime("%Y-%m-%d")
     assert results["display_end"] == navs.index[-1].strftime("%Y-%m-%d")
     assert results["data_end"] == dataset.index[-1].strftime("%Y-%m-%d")
+
+
+def test_render_report_html_contains_all_sections():
+    dataset = make_dataset()
+    results = run_default_analysis(dataset)
+    html = render_report_html(
+        results, missing=["FAKE"], generated_at=pd.Timestamp("2026-07-03 08:10")
+    )
+
+    for expected in [
+        "<!DOCTYPE html>",
+        "Generated: 2026-07-03 08:10",
+        "Backtest Period:",
+        "Portfolio NAV",
+        "Drawdown",
+        "Current Signal",
+        "Raw Signal",
+        "Annual Returns",
+        "Monthly Returns",
+        "Monthly Holdings",
+        "Stats",
+        "cdn.plot.ly",  # plotly.js CDN 로드 확인
+        "Data not found for: FAKE",
+    ]:
+        assert expected in html, f"missing section: {expected}"
