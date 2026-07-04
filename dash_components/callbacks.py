@@ -1647,7 +1647,6 @@ def register_callbacks(app):
         State("wf-window-type-radio", "value"),
         State("wf-train-input", "value"),
         State("wf-test-input", "value"),
-        State("wf-step-input", "value"),
         State("wf-samples-input", "value"),
         State("wf-seed-input", "value"),
         State("bm-type-radio", "value"),
@@ -1675,7 +1674,6 @@ def register_callbacks(app):
         window_type,
         train_months,
         test_months,
-        step_months,
         wf_samples,
         wf_seed,
         bm_type,
@@ -1781,7 +1779,9 @@ def register_callbacks(app):
             price=dataset,
             train_months=int(train_months),
             test_months=int(test_months),
-            step_months=int(step_months),
+            # step = test 강제: OOS 구간이 공백·중복 없이 이어져 결합 OOS 곡선이
+            # 주기적 재최적화 운용 시뮬레이션과 일치한다
+            step_months=int(test_months),
             window_type=window_type,
             top_k=top_k,
             weight_method=weight_method,
