@@ -175,7 +175,9 @@ table.data-table th {{ background: #f8f9fa; }}
 <p class="meta">Date: {data_end}</p>
 {signal_html}
 
-<h2>Raw Signal (Last 5 Days)</h2>
+<h2>Raw Signal (Last 5 Months)</h2>
+<p class="meta">Monthly signal rankings. If the last column's month is not complete yet,
+it is a preliminary signal computed from the latest intra-month prices.</p>
 <div class="table-scroll">{raw_signal_html}</div>
 
 <h2>Annual Returns</h2>
