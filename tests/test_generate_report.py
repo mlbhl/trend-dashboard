@@ -64,6 +64,7 @@ def test_render_report_html_contains_all_sections():
         "Annual Returns",
         "Monthly Returns",
         "Monthly Holdings",
+        "held for the following",
         "Stats",
         "cdn.plot.ly",  # plotly.js CDN 로드 확인
         "Data not found for: FAKE",

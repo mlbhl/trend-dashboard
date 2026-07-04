@@ -187,6 +187,8 @@ it is a preliminary signal computed from the latest intra-month prices.</p>
 {monthly_html}
 
 <h2>Monthly Holdings</h2>
+<p class="meta">Portfolio formed from each month-end signal and held for the following
+month. Each date is the start of that holding month.</p>
 {heatmap_html}
 
 <h2>Stats</h2>
