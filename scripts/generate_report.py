@@ -173,6 +173,8 @@ table.data-table th {{ background: #f8f9fa; }}
 
 <h2>Current Signal</h2>
 <p class="meta">Date: {data_end}</p>
+<p class="meta">If the latest month is not complete yet, the signal is preliminary —
+computed from the latest intra-month prices.</p>
 {signal_html}
 
 <h2>Raw Signal (Last 5 Months)</h2>

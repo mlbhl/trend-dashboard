@@ -1156,6 +1156,10 @@ def create_main_content():
                                 "Rank 1 represents the best-performing group, while higher ranks indicate worse performance. Entries are shown as Ticker (Rank).",
                                 className="text-muted d-block mb-2",
                             ),
+                            html.Small(
+                                "If the latest month is not complete yet, the signal is preliminary — computed from the latest intra-month prices.",
+                                className="text-muted d-block mb-2",
+                            ),
                             dcc.Graph(id="signal-table-chart", config={"displaylogo": False, "responsive": True}),
 
                             # Raw Signal Data Collapse
@@ -1189,6 +1193,10 @@ def create_main_content():
                             html.H4("Holdings Analysis", className="mb-3"),
                             html.Small(
                                 "The top quantile represents the best-performing assets, while the bottom quantile represents the worst.",
+                                className="text-muted d-block mb-2",
+                            ),
+                            html.Small(
+                                "Portfolio formed from each month-end signal and held for the following month. Each date is the start of that holding month.",
                                 className="text-muted d-block mb-2",
                             ),
                             html.Div(
