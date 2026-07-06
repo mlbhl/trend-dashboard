@@ -2,7 +2,7 @@
 
 dash_components/callbacks.py의 run_analysis + update_charts 디폴트 경로
 (Single 모드, Top-K, Equal Weight BM)를 Dash 없이 재현한다.
-scripts/run_daily_report.sh가 cron으로 매일 호출한다.
+scripts/run_daily_report.sh가 cron으로 화~토(미국장 종가 반영 다음날) 호출한다.
 """
 
 import sys
