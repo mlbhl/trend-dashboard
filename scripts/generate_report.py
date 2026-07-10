@@ -171,7 +171,7 @@ img {{ display: block; margin: 8px 0; }}
 computed from the latest intra-month prices.</p>
 <div class="table-scroll">{signal_html}</div>
 
-<h2>Raw Signal (Last 5 Months)</h2>
+<h2>Signal History</h2>
 <p class="meta">Monthly signal rankings. If the last column's month is not complete yet,
 it is a preliminary signal computed from the latest intra-month prices.</p>
 <div class="table-scroll">{raw_signal_html}</div>
@@ -187,7 +187,7 @@ it is a preliminary signal computed from the latest intra-month prices.</p>
 month. Each date is the start of that holding month.</p>
 {heatmap_html}
 
-<h2>Stats</h2>
+<h2>Statistics</h2>
 <div class="table-scroll">{stats_df_html}</div>
 </body>
 </html>
@@ -230,9 +230,13 @@ def render_report_html(
     heatmap_html = holding_heatmap_img(recent_wgt, title="")
     stats = summary_stats(navs)
 
-    # Raw signal 최근 5일 테이블
+    # Signal History 최근 5개월 테이블 — 마지막 달이 미완이면 컬럼명을 실제 데이터 일자로 표기
     signal_display = signal.iloc[-5:].T.copy()
-    signal_display.columns = signal_display.columns.strftime("%Y-%m-%d")
+    data_end_ts = pd.to_datetime(results["data_end"])
+    col_labels = [c.strftime("%Y-%m-%d") for c in signal_display.columns]
+    if col_labels and signal_display.columns[-1] > data_end_ts:
+        col_labels[-1] = data_end_ts.strftime("%Y-%m-%d")
+    signal_display.columns = col_labels
     raw_signal_html = signal_display.to_html(
         classes="data-table", float_format=lambda x: f"{x:.0f}", na_rep=""
     )

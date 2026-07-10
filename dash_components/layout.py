@@ -1152,9 +1152,9 @@ def create_main_content():
                             ),
                             dcc.Graph(id="signal-table-chart", config={"displaylogo": False, "responsive": True}),
 
-                            # Raw Signal Data Collapse
+                            # Signal History Collapse
                             dbc.Button(
-                                "Show Raw Signal Data",
+                                "Show Signal History",
                                 id="raw-signal-collapse-btn",
                                 color="link",
                                 className="mb-2 p-0",
@@ -1163,7 +1163,7 @@ def create_main_content():
                                 id="raw-signal-collapse",
                                 is_open=False,
                                 children=[
-                                    html.H5("Latest Signal Ranking", className="mt-2"),
+                                    html.H5("Signal History", className="mt-2"),
                                     html.Div(id="raw-signal-table-container"),
                                 ],
                                 className="mb-4",
@@ -1243,7 +1243,7 @@ def create_main_content():
                             dcc.Graph(id="heatmap-chart", config={"displaylogo": False, "responsive": True}),
 
                             # Performance Statistics Table
-                            html.H4("Performance Statistics", className="mb-3"),
+                            html.H4("Statistics", className="mb-3"),
                             dcc.Graph(id="stats-table-chart", config={"displaylogo": False, "responsive": True}),
 
                             # Stats DataFrame Collapse

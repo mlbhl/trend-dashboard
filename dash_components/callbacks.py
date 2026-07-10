@@ -1052,9 +1052,13 @@ def register_callbacks(app):
             latest_signal, n_quantiles=params["n_quantiles"], title=""
         )
 
-        # Raw Signal Data
+        # Signal History — 마지막 달이 미완이면 컬럼명을 실제 데이터 일자로 표기
         signal_display = signal.iloc[-5:].T.copy()
-        signal_display.columns = signal_display.columns.strftime("%Y-%m-%d")
+        data_end_ts = pd.to_datetime(params["data_end"])
+        col_labels = [c.strftime("%Y-%m-%d") for c in signal_display.columns]
+        if col_labels and signal_display.columns[-1] > data_end_ts:
+            col_labels[-1] = data_end_ts.strftime("%Y-%m-%d")
+        signal_display.columns = col_labels
         raw_signal_table = dash_table.DataTable(
             data=signal_display.reset_index().to_dict("records"),
             columns=[{"name": col, "id": col} for col in ["index"] + list(signal_display.columns)],
