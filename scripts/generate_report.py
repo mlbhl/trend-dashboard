@@ -15,14 +15,13 @@ from pandas.tseries.offsets import BMonthBegin
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from src.charts import (
-    create_annual_returns_chart,
-    create_drawdown_chart,
-    create_holding_heatmap,
-    create_monthly_returns_table,
-    create_nav_chart,
-    create_returns_table,
-    create_signal_category_table,
+from report_charts import (
+    annual_returns_img,
+    drawdown_chart_img,
+    holding_heatmap_img,
+    monthly_returns_html,
+    nav_chart_img,
+    signal_category_html,
 )
 from src.config import (
     DEFAULT_BACKTEST_START_DATE,
@@ -104,15 +103,6 @@ def run_default_analysis(dataset: pd.DataFrame) -> dict:
     }
 
 
-def _fig_html(fig, include_js: bool = False) -> str:
-    """Plotly figure를 embed용 HTML 조각으로 변환. plotly.js는 첫 차트에만 CDN 로드."""
-    return fig.to_html(
-        full_html=False,
-        include_plotlyjs="cdn" if include_js else False,
-        config={"displayModeBar": False},
-    )
-
-
 def _format_stats(stats: pd.DataFrame) -> pd.DataFrame:
     """summary_stats 결과를 대시보드 stats-df와 동일하게 포맷 (callbacks.py와 동일 로직)."""
     formatted = stats.copy().astype(object)
@@ -154,10 +144,14 @@ table.data-table {{ border-collapse: collapse; font-size: 0.8rem; }}
 table.data-table th, table.data-table td {{ border: 1px solid #dee2e6;
     padding: 4px 8px; text-align: center; }}
 table.data-table th {{ background: #f8f9fa; }}
+table.signal-table {{ margin-top: 8px; }}
+table.signal-table th {{ font-weight: bold; }}
+table.monthly-table th {{ background: #f8f9fa; }}
+img {{ display: block; margin: 8px 0; }}
 </style>
 </head>
 <body>
-<h1>Trend Dashboard — Daily Report</h1>
+<h1>Theme Momentum Dashboard — Daily Report</h1>
 <p class="meta">Generated: {generated_at}</p>
 <p class="meta">{period_info}</p>
 {warning_html}
@@ -175,7 +169,7 @@ table.data-table th {{ background: #f8f9fa; }}
 <p class="meta">Date: {data_end}</p>
 <p class="meta">If the latest month is not complete yet, the signal is preliminary —
 computed from the latest intra-month prices.</p>
-{signal_html}
+<div class="table-scroll">{signal_html}</div>
 
 <h2>Raw Signal (Last 5 Months)</h2>
 <p class="meta">Monthly signal rankings. If the last column's month is not complete yet,
@@ -186,7 +180,7 @@ it is a preliminary signal computed from the latest intra-month prices.</p>
 {annual_html}
 
 <h2>Monthly Returns — {strat_name}</h2>
-{monthly_html}
+<div class="table-scroll">{monthly_html}</div>
 
 <h2>Monthly Holdings</h2>
 <p class="meta">Portfolio formed from each month-end signal and held for the following
@@ -194,7 +188,6 @@ month. Each date is the start of that holding month.</p>
 {heatmap_html}
 
 <h2>Stats</h2>
-{stats_fig_html}
 <div class="table-scroll">{stats_df_html}</div>
 </body>
 </html>
@@ -225,24 +218,17 @@ def render_report_html(
         for name, m in kpis.items()
     )
 
-    # 차트 (update_charts와 동일한 함수/인자)
-    fig_nav = create_nav_chart(navs_rebased, title="Portfolio NAV (Rebased to 100)")
-    fig_dd = create_drawdown_chart(navs_rebased, title="Drawdown (%)", height=350)
-    fig_category = create_signal_category_table(
-        get_signal_ranking(signal), n_quantiles=DEFAULT_N_QUANTILES, title=""
+    # 차트 (matplotlib PNG) / 표 (HTML) — 계산 입력은 update_charts와 동일
+    nav_html = nav_chart_img(navs_rebased, title="Portfolio NAV (Rebased to 100)")
+    dd_html = drawdown_chart_img(navs_rebased, title="Drawdown (%)")
+    signal_html = signal_category_html(
+        get_signal_ranking(signal), n_quantiles=DEFAULT_N_QUANTILES
     )
-    fig_annual = create_annual_returns_chart(annual_returns(navs), title="Annual Returns")
-    fig_monthly = create_monthly_returns_table(
-        monthly_returns(navs[strat_name]), title=""
-    )
+    annual_html = annual_returns_img(annual_returns(navs), title="Annual Returns")
+    monthly_html = monthly_returns_html(monthly_returns(navs[strat_name]))
     recent_wgt = wgt.iloc[-24:]
-    fig_heatmap = create_holding_heatmap(
-        recent_wgt,
-        title="",
-        height=max(500, len(recent_wgt.columns) * 25),
-    )
+    heatmap_html = holding_heatmap_img(recent_wgt, title="")
     stats = summary_stats(navs)
-    fig_stats = create_returns_table(stats)
 
     # Raw signal 최근 5일 테이블
     signal_display = signal.iloc[-5:].T.copy()
@@ -265,16 +251,15 @@ def render_report_html(
         period_info=f"Backtest Period: {results['display_start']} ~ {results['display_end']}",
         warning_html=warning_html,
         kpi_cards=kpi_cards,
-        nav_html=_fig_html(fig_nav, include_js=True),
-        dd_html=_fig_html(fig_dd),
+        nav_html=nav_html,
+        dd_html=dd_html,
         data_end=results["data_end"],
-        signal_html=_fig_html(fig_category),
+        signal_html=signal_html,
         raw_signal_html=raw_signal_html,
-        annual_html=_fig_html(fig_annual),
+        annual_html=annual_html,
         strat_name=strat_name,
-        monthly_html=_fig_html(fig_monthly),
-        heatmap_html=_fig_html(fig_heatmap),
-        stats_fig_html=_fig_html(fig_stats),
+        monthly_html=monthly_html,
+        heatmap_html=heatmap_html,
         stats_df_html=stats_df_html,
     )
 
