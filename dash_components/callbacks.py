@@ -1,5 +1,7 @@
 """Callback functions for Trend Dashboard Dash app."""
 
+from io import StringIO
+
 import numpy as np
 import pandas as pd
 import dash
@@ -676,11 +678,11 @@ def register_callbacks(app):
             raise PreventUpdate
 
         # Parse data
-        navs = pd.read_json(navs_json)
+        navs = pd.read_json(StringIO(navs_json))
         navs.index = pd.to_datetime(navs.index)
         navs = navs.sort_index()
 
-        signal = pd.read_json(signal_json)
+        signal = pd.read_json(StringIO(signal_json))
         signal.index = pd.to_datetime(signal.index)
         signal = signal.sort_index()
 
@@ -770,7 +772,7 @@ def register_callbacks(app):
             # Combined quantile heatmap with all quantiles color-coded
             q_wgts = {}
             for q_name, wgt_json in weights_data.items():
-                wgt = pd.read_json(wgt_json)
+                wgt = pd.read_json(StringIO(wgt_json))
                 wgt.index = pd.to_datetime(wgt.index)
                 wgt = wgt.sort_index()
                 q_wgts[q_name] = wgt.iloc[-24:]
@@ -789,7 +791,7 @@ def register_callbacks(app):
         else:
             wgt_json = weights_data.get(default_quantile)
             if wgt_json:
-                wgt = pd.read_json(wgt_json)
+                wgt = pd.read_json(StringIO(wgt_json))
                 wgt.index = pd.to_datetime(wgt.index)
                 wgt = wgt.sort_index()
                 recent_wgt = wgt.iloc[-24:]
@@ -860,7 +862,7 @@ def register_callbacks(app):
         if not wgt_json:
             raise PreventUpdate
 
-        wgt = pd.read_json(wgt_json)
+        wgt = pd.read_json(StringIO(wgt_json))
         wgt.index = pd.to_datetime(wgt.index)
         wgt = wgt.sort_index()
         recent_wgt = wgt.iloc[-24:]
@@ -909,13 +911,13 @@ def register_callbacks(app):
         if params["strategy_type"] == "Quantile":
             q_wgts = {}
             for q_name, wgt_json in weights_data.items():
-                wgt = pd.read_json(wgt_json)
+                wgt = pd.read_json(StringIO(wgt_json))
                 wgt.index = pd.to_datetime(wgt.index)
                 wgt = wgt.sort_index()
                 q_wgts[q_name] = wgt.iloc[-24:]
             sig = None
             if signal_json:
-                sig = pd.read_json(signal_json)
+                sig = pd.read_json(StringIO(signal_json))
                 sig.index = pd.to_datetime(sig.index)
                 sig = sig.sort_index()
             all_tickers = set()
@@ -935,7 +937,7 @@ def register_callbacks(app):
             wgt_json = weights_data.get(selected_quantile)
             if not wgt_json:
                 raise PreventUpdate
-            wgt = pd.read_json(wgt_json)
+            wgt = pd.read_json(StringIO(wgt_json))
             wgt.index = pd.to_datetime(wgt.index)
             wgt = wgt.sort_index()
             recent_wgt = wgt.iloc[-24:]
@@ -964,7 +966,7 @@ def register_callbacks(app):
         if not selected_col or not navs_json:
             raise PreventUpdate
 
-        navs = pd.read_json(navs_json)
+        navs = pd.read_json(StringIO(navs_json))
         navs.index = pd.to_datetime(navs.index)
         navs = navs.sort_index()
 
@@ -990,7 +992,7 @@ def register_callbacks(app):
         if not n_clicks or not navs_json:
             raise PreventUpdate
         from io import BytesIO
-        navs = pd.read_json(navs_json)
+        navs = pd.read_json(StringIO(navs_json))
         navs.index = pd.to_datetime(navs.index)
         navs = navs.sort_index()
         navs_rebased = navs / navs.iloc[0] * 100
@@ -1010,7 +1012,7 @@ def register_callbacks(app):
         if not n_clicks or not navs_json:
             raise PreventUpdate
         from io import BytesIO
-        navs = pd.read_json(navs_json)
+        navs = pd.read_json(StringIO(navs_json))
         navs.index = pd.to_datetime(navs.index)
         navs = navs.sort_index()
         navs_rebased = navs / navs.iloc[0] * 100
@@ -1032,7 +1034,7 @@ def register_callbacks(app):
         if not n_clicks or not navs_json:
             raise PreventUpdate
         from io import BytesIO
-        navs = pd.read_json(navs_json)
+        navs = pd.read_json(StringIO(navs_json))
         navs.index = pd.to_datetime(navs.index)
         navs = navs.sort_index()
         ann_rets = annual_returns(navs)
@@ -1053,7 +1055,7 @@ def register_callbacks(app):
         if not n_clicks or not navs_json or not selected_col:
             raise PreventUpdate
         from io import BytesIO
-        navs = pd.read_json(navs_json)
+        navs = pd.read_json(StringIO(navs_json))
         navs.index = pd.to_datetime(navs.index)
         navs = navs.sort_index()
         if selected_col not in navs.columns:
@@ -1083,7 +1085,7 @@ def register_callbacks(app):
         if params and params.get("strategy_type") == "Quantile":
             with pd.ExcelWriter(buf) as writer:
                 for q_name in sorted(weights_data.keys(), key=lambda x: int(x[1:])):
-                    wgt = pd.read_json(weights_data[q_name])
+                    wgt = pd.read_json(StringIO(weights_data[q_name]))
                     wgt.index = pd.to_datetime(wgt.index)
                     wgt = wgt.sort_index()
                     wgt.to_excel(writer, index=True, sheet_name=q_name)
@@ -1093,7 +1095,7 @@ def register_callbacks(app):
             wgt_json = weights_data.get(selected_quantile)
             if not wgt_json:
                 raise PreventUpdate
-            wgt = pd.read_json(wgt_json)
+            wgt = pd.read_json(StringIO(wgt_json))
             wgt.index = pd.to_datetime(wgt.index)
             wgt = wgt.sort_index()
             wgt.to_excel(buf, index=True, sheet_name="Holdings")
@@ -1602,7 +1604,7 @@ def register_callbacks(app):
         sharpe_comparison = ""
 
         if wf_store["combined_oos_nav"]:
-            oos_nav = pd.read_json(wf_store["combined_oos_nav"], typ="series")
+            oos_nav = pd.read_json(StringIO(wf_store["combined_oos_nav"]), typ="series")
             oos_nav.index = pd.to_datetime(oos_nav.index)
             oos_nav = oos_nav.sort_index()
             oos_nav_rebased = oos_nav / oos_nav.iloc[0] * 100
@@ -1620,7 +1622,7 @@ def register_callbacks(app):
             # Use stored benchmark NAV from walk-forward optimization
             oos_bm_nav = None
             if wf_store.get("combined_oos_bm_nav"):
-                oos_bm_nav = pd.read_json(wf_store["combined_oos_bm_nav"], typ="series")
+                oos_bm_nav = pd.read_json(StringIO(wf_store["combined_oos_bm_nav"]), typ="series")
                 oos_bm_nav.index = pd.to_datetime(oos_bm_nav.index)
                 oos_bm_nav = oos_bm_nav.sort_index()
                 oos_bm_nav = oos_bm_nav / oos_bm_nav.iloc[0] * 100
