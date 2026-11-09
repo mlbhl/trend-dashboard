@@ -1828,7 +1828,7 @@ def register_callbacks(app):
 
         result_div = dbc.Alert(
             [
-                html.Strong(f"Walk-Forward Complete!"),
+                html.Strong("Walk-Forward Complete!"),
                 html.Span(f" ({wf_result['valid_folds']}/{wf_result['total_folds']} folds, {wf_type})"),
                 html.Br(),
                 html.Span(f"IS Sharpe (avg): {wf_result['is_sharpe_avg']:.2f}"),

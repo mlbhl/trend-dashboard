@@ -30,7 +30,7 @@ def generate_signal(
     Returns:
         DataFrame with cross-sectional rankings (1 = best)
     """
-    price_m = price.resample('BM').last()
+    price_m = price.resample('BME').last()
 
     # Calculate momentum for each window
     mom_s = (price_m / price_m.shift(short_window)).rank(axis=1)

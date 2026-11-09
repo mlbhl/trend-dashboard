@@ -54,7 +54,7 @@ def compute_weight_top_k(
     Returns:
         Tuple of (portfolio weights, benchmark weights)
     """
-    vol = calc_vol(price).resample('BM').last()
+    vol = calc_vol(price).resample('BME').last()
 
     wgt = pd.DataFrame(0., index=signal.index, columns=signal.columns)
     bm_wgt = pd.DataFrame(0., index=signal.index, columns=signal.columns)
@@ -111,7 +111,7 @@ def compute_weight_quantile(
     Returns:
         Tuple of (dict of quantile weights, benchmark weights)
     """
-    vol = calc_vol(price).resample('BM').last()
+    vol = calc_vol(price).resample('BME').last()
 
     bm_wgt = pd.DataFrame(0.0, index=signal.index, columns=signal.columns)
     q_wgts = {

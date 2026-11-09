@@ -15,7 +15,7 @@ def precompute_momentums(price: pd.DataFrame, max_window: int = 12) -> dict[int,
     Returns:
         Dict mapping window -> momentum rank DataFrame
     """
-    price_m = price.resample('BM').last()
+    price_m = price.resample('BME').last()
     momentums = {}
 
     for window in range(1, max_window + 1):
@@ -363,7 +363,7 @@ def optimize_sharpe(
     momentums = precompute_momentums(price)
 
     # Precompute volatility
-    vol = calc_vol(price).resample('BM').last()
+    vol = calc_vol(price).resample('BME').last()
 
     # Generate all combinations
     lookback_combos = generate_lookback_combinations()
@@ -499,7 +499,7 @@ def walk_forward_optimize(
 
     # Precompute all data once
     momentums = precompute_momentums(price)
-    vol = calc_vol(price).resample('BM').last()
+    vol = calc_vol(price).resample('BME').last()
 
     # Get date range
     start = price.index[0]
@@ -900,7 +900,7 @@ def fast_benchmark_nav(
     All available tickers get equal weight at each rebalancing.
     """
     # Resample to monthly for rebalancing dates
-    price_m = price.resample('BM').last()
+    price_m = price.resample('BME').last()
 
     # Compute equal weights for all valid tickers at each month
     wgt = pd.DataFrame(0., index=price_m.index, columns=price_m.columns)
