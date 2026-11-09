@@ -45,8 +45,6 @@ def summary_stats(navs: pd.DataFrame | pd.Series) -> pd.DataFrame:
     skew = returns.skew()
     kurt = returns.kurtosis()
 
-    # T-stat
-    t_stat = mean_return / (vol / np.sqrt(n_years))
 
     stats = pd.DataFrame({
         'nyears': n_years,

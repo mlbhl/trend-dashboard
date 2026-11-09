@@ -825,23 +825,6 @@ def create_sidebar():
     )
 
 
-def create_kpi_card(title, kpi_id):
-    """Create a KPI card component."""
-    return dbc.Card(
-        dbc.CardBody(
-            [
-                html.H6(title, className="card-subtitle mb-2 text-muted"),
-                html.Div(id=f"{kpi_id}-cagr", className="mb-1"),
-                html.Div(id=f"{kpi_id}-vol", className="mb-1"),
-                html.Div(id=f"{kpi_id}-sharpe", className="mb-1"),
-                html.Div(id=f"{kpi_id}-mdd", className="mb-1"),
-                html.Div(id=f"{kpi_id}-ytd", className="mb-1"),
-            ]
-        ),
-        className="h-100",
-    )
-
-
 def create_main_content():
     """Create the main content area."""
     return dbc.Col(

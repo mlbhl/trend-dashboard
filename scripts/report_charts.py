@@ -117,7 +117,7 @@ def holding_heatmap_img(weight: pd.DataFrame, title: str = "Monthly Holdings") -
 
     fig_h = max(5.0, len(tickers) * 0.28)
     fig, ax = plt.subplots(figsize=(11, fig_h))
-    im = ax.imshow(z, aspect="auto", cmap="Blues", vmin=0)
+    ax.imshow(z, aspect="auto", cmap="Blues", vmin=0)
 
     ax.set_yticks(range(len(tickers)))
     ax.set_yticklabels(tickers, fontsize=8)

@@ -651,7 +651,6 @@ def walk_forward_optimize(
     combined_oos_nav = _combine_navs(oos_navs) if oos_navs else None
     combined_oos_bm_nav = _combine_navs(oos_bm_navs) if oos_bm_navs else None
     combined_oos_sharpe = _calc_sharpe_from_nav(combined_oos_nav) if combined_oos_nav is not None else np.nan
-    combined_oos_bm_sharpe = _calc_sharpe_from_nav(combined_oos_bm_nav) if combined_oos_bm_nav is not None else np.nan
 
     # Calculate parameter stability
     param_stability = _calc_param_stability(fold_results) if fold_results else {}

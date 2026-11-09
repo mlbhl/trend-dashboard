@@ -60,13 +60,3 @@ def load_price_data(
     dataset = raw[available_tickers].resample('B').last().ffill()
 
     return dataset, missing_tickers
-
-
-def get_latest_prices(dataset: pd.DataFrame) -> pd.Series:
-    """Get the most recent prices for each ticker."""
-    return dataset.iloc[-1]
-
-
-def get_price_returns(dataset: pd.DataFrame, period: int = 1) -> pd.DataFrame:
-    """Calculate returns over a given period."""
-    return dataset.pct_change(period)

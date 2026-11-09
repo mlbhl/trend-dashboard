@@ -21,7 +21,7 @@ Price Data (Yahoo Finance) → Signal Generation → Portfolio Weights → Backt
 ```
 
 **Module Organization (`src/`):**
-- `config.py` - Default ticker universe (24 ETFs), window parameters, weight methods
+- `config.py` - Ticker presets (5; default `Alpha (Default)` = 20 ETFs), window parameters, weight methods
 - `data.py` - `load_price_data()` downloads and aligns daily prices from yfinance
 - `signals.py` - `generate_signal()` computes multi-window momentum rankings (cross-sectional)
 - `portfolio.py` - `compute_weight_top_k()`, `compute_weight_quantile()`, and `backtest()` engine
@@ -35,6 +35,10 @@ Price Data (Yahoo Finance) → Signal Generation → Portfolio Weights → Backt
 
 **Entry Point:**
 - `app.py` - Dash app, uses gunicorn for production
+
+**Manual Report (`scripts/`):**
+- `generate_report.py` - Headless run of the dashboard's default analysis → `reports/report_<date>.html` (run manually: `python scripts/generate_report.py`; `reports/` is gitignored, no cron/auto-commit)
+- `report_charts.py` - Static matplotlib charts used by the report
 
 ## Key Patterns
 

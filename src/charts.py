@@ -3,7 +3,6 @@
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-from plotly.subplots import make_subplots
 
 
 def create_nav_chart(
@@ -458,7 +457,6 @@ def create_signal_category_table(
     import numpy as np
 
     signal = signal.dropna()
-    n = len(signal)
 
     # Assign quantiles: best signal -> Q5, worst -> Q1
     # Ties are kept together via percentile rank (average) + fixed-bin pd.cut
@@ -595,8 +593,6 @@ def create_annual_returns_chart(
     Returns:
         Plotly Figure
     """
-    import numpy as np
-
     colors = px.colors.qualitative.Set2
     fig = go.Figure()
 

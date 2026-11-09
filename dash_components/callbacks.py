@@ -1,16 +1,15 @@
 """Callback functions for Trend Dashboard Dash app."""
 
-import json
 import numpy as np
 import pandas as pd
 import dash
-from dash import Input, Output, State, callback, dcc, html, no_update, dash_table, ALL
+from dash import Input, Output, State, dcc, html, dash_table, ALL
 from dash.exceptions import PreventUpdate
 import dash_bootstrap_components as dbc
 import plotly.graph_objects as go
 from pandas.tseries.offsets import BMonthBegin
 
-from src.config import TICKER_PRESETS, DEFAULT_PRESET, WEIGHT_METHODS, TICKER_DESCRIPTIONS
+from src.config import TICKER_PRESETS, DEFAULT_PRESET, TICKER_DESCRIPTIONS
 from src.data import load_price_data
 from src.signals import generate_signal, get_signal_ranking
 from src.portfolio import (
