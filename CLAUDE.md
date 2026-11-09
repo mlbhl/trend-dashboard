@@ -21,23 +21,24 @@ Price Data (Yahoo Finance) → Signal Generation → Portfolio Weights → Backt
 ```
 
 **Module Organization (`src/`):**
-- `config.py` - Ticker presets (5; default `Alpha (Default)` = 20 ETFs), window parameters, weight methods, `IMPLEMENTATION_LAG` (business days from month-end signal to rebalance; default 1)
+- `analysis.py` - `run_analysis()`: everything the Run Analysis button computes (pure pandas, raises `AnalysisError`, returns warnings as strings). Used by the dashboard callback and the report. Also `build_composite_bm()` for Custom BM
+- `config.py` - Ticker presets (5; default `Alpha (Default)` = 20 ETFs), window parameters, weight methods, sidebar defaults (`DEFAULT_*`, read by `layout.py` and the report), `IMPLEMENTATION_LAG` (business days from month-end signal to rebalance; default 1)
 - `data.py` - `load_price_data()` downloads and aligns daily prices from yfinance
 - `signals.py` - `generate_signal()` computes multi-window momentum rankings (cross-sectional)
 - `portfolio.py` - `compute_weight_top_k()`, `compute_weight_quantile()`, and `backtest()` engine
-- `metrics.py` - `summary_stats()` for CAGR, Sharpe, MDD; `calculate_kpis()` for dashboard display
+- `metrics.py` - `summary_stats()` for CAGR, Sharpe, MDD; `calculate_kpis()` for dashboard display; `format_stats()` / `kpi_lines()` display strings shared by dashboard and report
 - `charts.py` - Plotly visualizations: NAV, drawdown, allocation, heatmap, signal tables
 - `optimizer.py` - `optimize_sharpe()` grid search for optimal lookback windows and weights
 
 **Dash Components (`dash_components/`):**
 - `layout.py` - UI layout with sidebar controls and main content tabs
-- `callbacks.py` - All Dash callbacks for interactivity and data processing; includes `_build_composite_bm()` for Custom BM
+- `callbacks.py` - All Dash callbacks; Run Analysis only wraps `src.analysis.run_analysis()` into alerts/stores
 
 **Entry Point:**
 - `app.py` - Dash app, uses gunicorn for production
 
 **Manual Report (`scripts/`):**
-- `generate_report.py` - Headless run of the dashboard's default analysis → `reports/report_<date>.html` (run manually: `python scripts/generate_report.py`; `reports/` is gitignored, no cron/auto-commit)
+- `generate_report.py` - Calls `src.analysis.run_analysis()` with the sidebar defaults and renders `reports/report_<date>.html` (run manually: `python scripts/generate_report.py`; `reports/` is gitignored, no cron/auto-commit)
 - `report_charts.py` - Static matplotlib charts used by the report
 
 ## Key Patterns

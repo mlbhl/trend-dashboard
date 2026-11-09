@@ -76,3 +76,18 @@ def get_signal_ranking(signal: pd.DataFrame) -> pd.Series:
     """Get the most recent signal ranking, sorted by rank."""
     latest = signal.iloc[-1].dropna().sort_values()
     return latest
+
+
+def signal_history(signal: pd.DataFrame, data_end: str, months: int = 5) -> pd.DataFrame:
+    """Last `months` signal rows as a ticker x date table.
+
+    The newest column is labelled with the actual last data date when the month is not over yet
+    (its signal is preliminary, computed from intra-month prices).
+    """
+    table = signal.iloc[-months:].T.copy()
+    data_end_ts = pd.to_datetime(data_end)
+    labels = [c.strftime("%Y-%m-%d") for c in table.columns]
+    if labels and table.columns[-1] > data_end_ts:
+        labels[-1] = data_end_ts.strftime("%Y-%m-%d")
+    table.columns = labels
+    return table

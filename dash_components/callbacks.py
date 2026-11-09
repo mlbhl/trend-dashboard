@@ -8,21 +8,12 @@ from dash.exceptions import PreventUpdate
 import dash_bootstrap_components as dbc
 import plotly.graph_objects as go
 
-from src.config import TICKER_PRESETS, DEFAULT_PRESET, TICKER_DESCRIPTIONS
+from src.analysis import AnalysisError, build_composite_bm
+from src.analysis import run_analysis as run_analysis_pipeline
+from src.config import TICKER_PRESETS, DEFAULT_PRESET, TICKER_DESCRIPTIONS, DEFAULT_CORE_WEIGHT_PCT
 from src.data import load_price_data
-from src.signals import generate_signal, get_signal_ranking
-from src.portfolio import (
-    backtest,
-    blend_core_satellite,
-    compute_weight_core,
-    compute_weight_top_k,
-    compute_weight_quantile,
-    equal_weight_benchmark,
-    run_top_k_backtest,
-    run_quantile_backtest,
-    to_rebalance_dates,
-)
-from src.metrics import summary_stats, rebase, calculate_kpis, annual_returns, monthly_returns
+from src.signals import get_signal_ranking, signal_history
+from src.metrics import summary_stats, rebase, calculate_kpis, annual_returns, monthly_returns, format_stats, kpi_lines
 from src.charts import (
     create_nav_chart,
     create_drawdown_chart,
@@ -36,68 +27,6 @@ from src.charts import (
 )
 from src.optimizer import optimize_sharpe, walk_forward_optimize
 from dash_components.layout import _create_bm_row, _create_core_row
-
-
-def _build_composite_bm(bm_config: list, start_date: str) -> tuple:
-    """Build a composite benchmark from multiple tickers with weights.
-
-    Args:
-        bm_config: List of dicts [{"ticker": "SPY", "weight": 60}, ...]
-        start_date: Start date for price data download.
-
-    Returns:
-        (bm_series, bm_label, warnings) where bm_series is a pd.Series of
-        composite price, bm_label is a display string, and warnings is a list
-        of warning strings for missing tickers.
-    """
-    if not bm_config:
-        return None, None, []
-
-    tickers = [row["ticker"].strip().upper() for row in bm_config if row.get("ticker")]
-    weights = [float(row.get("weight", 0)) for row in bm_config if row.get("ticker")]
-
-    if not tickers:
-        return None, None, []
-
-    # Convert percentage weights to decimals (e.g. 60 → 0.6)
-    # No normalization: <100% implies cash, >100% implies leverage
-    dec_weights = [w / 100.0 for w in weights]
-
-    # Load all ticker data at once
-    all_data, missing = load_price_data(tickers, start_date=start_date)
-
-    warn_msgs = []
-    if missing:
-        warn_msgs.append(f"BM ticker(s) not found: {', '.join(missing)}")
-
-    # Filter to found tickers and their weights
-    found = []
-    found_weights = []
-    for t, w in zip(tickers, dec_weights):
-        if t in all_data.columns:
-            found.append(t)
-            found_weights.append(w)
-    if not found:
-        return None, None, warn_msgs
-
-    prices = all_data[found]
-    daily_ret = prices.pct_change().dropna()
-    if daily_ret.empty:
-        return None, None, warn_msgs
-
-    # Weighted daily return → cumulative price series
-    composite_ret = daily_ret.multiply(found_weights, axis=1).sum(axis=1)
-    composite_price = (1 + composite_ret).cumprod()
-    composite_price.iloc[0] = 1.0  # set initial value
-
-    # Build label from original config (only found tickers with original weights)
-    label_parts = []
-    for t, w in zip(tickers, weights):
-        if t in all_data.columns:
-            label_parts.append(f"{t} {w:.1f}%")
-    bm_label = " + ".join(label_parts)
-
-    return composite_price, bm_label, warn_msgs
 
 
 def register_callbacks(app):
@@ -650,308 +579,62 @@ def register_callbacks(app):
         core_weight_pct,
         core_config,
     ):
-        """Run the main analysis."""
+        """Run the main analysis (computation lives in src/analysis.py)."""
         if not n_clicks or not selected_tickers or len(selected_tickers) < 2:
             raise PreventUpdate
 
-        # Validate core-satellite config
-        if strategy_mode == "core-satellite" and not core_config:
-            return (
-                None, None, None, None, None, None,
-                {"display": "block"},  # Show instructions
-                {"display": "none"},  # Hide results
-                {"display": "none"},  # Hide loading
-                dbc.Alert(
-                    [html.I(className="fas fa-times-circle me-2"),
-                     "Core-Satellite mode requires core tickers. Please configure and Apply core settings."],
-                    color="danger",
-                ),
-                {"display": "none"},  # Hide walk-forward results
-            )
-
-        # Calculate weights
-        if weight_mode == "equal":
-            short_wgt = mid_wgt = long_wgt = 1 / 3
-        else:
-            total = short_wgt + mid_wgt + long_wgt
-            if total > 0:
-                short_wgt, mid_wgt, long_wgt = short_wgt / total, mid_wgt / total, long_wgt / total
-
-        # Handle top_k
-        if select_all:
-            top_k = None
-
-        # Ensure tcost is a number (input is in %, convert to decimal)
-        tcost = float(tcost) / 100.0 if tcost else 0.0
-
-        # Load data
-        dataset, missing = load_price_data(selected_tickers, start_date=start_date)
-
-        # Check if we have enough valid tickers
-        if len(dataset.columns) < 2:
-            error_msg = "Not enough valid tickers. Need at least 2 tickers with data."
-            if missing:
-                error_msg += f" Missing: {', '.join(missing)}"
-            return (
-                None, None, None, None, None, None,
-                {"display": "block"},  # Show instructions
-                {"display": "none"},  # Hide results
-                {"display": "none"},  # Hide loading
-                dbc.Alert([html.I(className="fas fa-times-circle me-2"), error_msg], color="danger"),
-                {"display": "none"},  # Hide walk-forward results
-            )
-
-        # Collect warnings
-        warnings = []
-        if missing:
-            warnings.append(
-                dbc.Alert(
-                    [html.I(className="fas fa-exclamation-triangle me-2"), f"Data not found for: {', '.join(missing)}"],
-                    color="warning",
-                    dismissable=True,
-                )
-            )
-
-        # Load benchmark data if custom
-        bm_data = None
-        custom_bm_label = None
-        if bm_type == "custom" and bm_config:
-            bm_series, bm_label, bm_warns = _build_composite_bm(bm_config, start_date)
-            for w in bm_warns:
-                warnings.append(
-                    dbc.Alert(
-                        [html.I(className="fas fa-exclamation-triangle me-2"), w],
-                        color="warning",
-                        dismissable=True,
-                    )
-                )
-            if bm_series is not None:
-                bm_data = bm_series
-                custom_bm_label = bm_label
-            else:
-                warnings.append(
-                    dbc.Alert(
-                        [html.I(className="fas fa-exclamation-triangle me-2"), "Custom BM could not be built. Using Equal Weight BM instead."],
-                        color="warning",
-                        dismissable=True,
-                    )
-                )
-
-        # Generate signal
-        signal = generate_signal(
-            dataset,
-            short_window=short_window,
-            mid_window=mid_window,
-            long_window=long_window,
-            short_wgt=short_wgt,
-            mid_wgt=mid_wgt,
-            long_wgt=long_wgt,
-            thresh=thresh,
-        )
-
-        # Parse core-satellite config
-        is_core_satellite = strategy_mode == "core-satellite"
-        core_ratio = (core_weight_pct or 70) / 100.0 if is_core_satellite else 0.0
-
-        # Parse core tickers/weights from applied config
-        core_tickers_parsed = []
-        core_weights_parsed = []
-        if is_core_satellite and core_config:
-            for row in core_config:
-                ticker = row.get("ticker", "").strip().upper()
-                weight = float(row.get("weight", 0))
-                if ticker and weight > 0:
-                    core_tickers_parsed.append(ticker)
-                    core_weights_parsed.append(weight)
-
-        # Load core ticker data if needed (tickers not in selected universe)
-        if is_core_satellite and core_tickers_parsed:
-            extra_tickers = [t for t in core_tickers_parsed if t not in dataset.columns]
-            if extra_tickers:
-                extra_data, extra_missing = load_price_data(
-                    list(dataset.columns) + extra_tickers, start_date=start_date
-                )
-                if extra_missing:
-                    missing_core = [t for t in extra_missing if t in core_tickers_parsed]
-                    if missing_core:
-                        warnings.append(
-                            dbc.Alert(
-                                [html.I(className="fas fa-exclamation-triangle me-2"),
-                                 f"Core ticker(s) not found: {', '.join(missing_core)}"],
-                                color="warning",
-                                dismissable=True,
-                            )
-                        )
-                # Use expanded dataset for backtesting
-                dataset_expanded = extra_data
-            else:
-                dataset_expanded = dataset
-        else:
-            dataset_expanded = dataset
-
-        # Run backtest
-        if strategy_type == "Top-K":
-            strat_nav, universe_bm_nav, turnover = run_top_k_backtest(
-                dataset,
-                signal,
+        try:
+            result = run_analysis_pipeline(
+                tickers=selected_tickers,
+                start_date=start_date,
+                backtest_start_date=backtest_start_date,
+                backtest_end_date=backtest_end_date,
+                thresh=thresh,
+                short_window=short_window,
+                mid_window=mid_window,
+                long_window=long_window,
+                weight_mode=weight_mode,
+                short_wgt=short_wgt,
+                mid_wgt=mid_wgt,
+                long_wgt=long_wgt,
+                strategy_type=strategy_type,
+                select_all=select_all,
                 top_k=top_k,
-                weight_method=weight_method,
-                tcost=tcost,
-            )
-            strat_name = "All" if top_k is None else f"Top-{top_k}"
-
-            # Get satellite weights for heatmap
-            sat_wgt, _ = compute_weight_top_k(dataset, signal, top_k=top_k, weight_method=weight_method)
-
-            if is_core_satellite and core_tickers_parsed:
-                # Build core weights on expanded dataset
-                core_wgt = compute_weight_core(
-                    dataset_expanded, signal, core_tickers_parsed, core_weights_parsed
-                )
-
-                # Align satellite weights to expanded dataset columns
-                sat_wgt_expanded = sat_wgt.reindex(columns=dataset_expanded.columns, fill_value=0.0)
-                core_wgt_aligned = core_wgt.reindex(columns=dataset_expanded.columns, fill_value=0.0)
-
-                # Blend weights (same function the optimizer uses)
-                combined_wgt = blend_core_satellite(
-                    sat_wgt, dataset_expanded, core_tickers_parsed, core_weights_parsed, core_ratio
-                )
-
-                # Signal-date weights -> rebalance dates (config.IMPLEMENTATION_LAG)
-                combined_wgt_shifted = to_rebalance_dates(combined_wgt)
-                core_wgt_shifted = to_rebalance_dates(core_wgt_aligned)
-                sat_wgt_shifted = to_rebalance_dates(sat_wgt_expanded)
-
-                # Run backtests
-                combined_nav, _ = backtest(dataset_expanded, combined_wgt_shifted, tcost=tcost)
-                core_nav_only, _ = backtest(dataset_expanded, core_wgt_shifted, tcost=tcost)
-                sat_nav_only, _ = backtest(dataset_expanded, sat_wgt_shifted, tcost=tcost)
-
-                # Build NAV DataFrame with detailed core label
-                total_core_w = sum(core_weights_parsed)
-                core_label = " + ".join(
-                    f"{t} {w/total_core_w*100:.1f}%" for t, w in zip(core_tickers_parsed, core_weights_parsed)
-                )
-                core_pct = int(round(core_ratio * 100))
-                sat_pct = 100 - core_pct
-                navs = pd.DataFrame({
-                    f"Combined (Core {core_pct}% / Satellite {sat_pct}%)": combined_nav,
-                    f"Core ({core_label})": core_nav_only,
-                    f"Satellite ({strat_name})": sat_nav_only,
-                })
-                sat_wgt_disp = to_rebalance_dates(sat_wgt)
-                weights_data = {strat_name: sat_wgt_disp.to_json(date_format="iso")}
-            else:
-                navs = pd.DataFrame({strat_name: strat_nav})
-                sat_wgt_disp = to_rebalance_dates(sat_wgt)
-                weights_data = {strat_name: sat_wgt_disp.to_json(date_format="iso")}
-        else:
-            q_nav, q_to, universe_bm_nav = run_quantile_backtest(
-                dataset,
-                signal,
                 n_quantiles=n_quantiles,
-                tcost=tcost,
                 weight_method=weight_method,
+                tcost_pct=tcost,
+                bm_type=bm_type,
+                bm_config=bm_config,
+                strategy_mode=strategy_mode,
+                core_weight_pct=core_weight_pct,
+                core_config=core_config,
             )
-            navs = q_nav.copy()
-
-            # Get weights for all quantiles
-            q_wgts, _ = compute_weight_quantile(
-                dataset, signal, n_quantiles=n_quantiles, weight_method=weight_method
+        except AnalysisError as err:
+            return (
+                None, None, None, None, None, None,
+                {"display": "block"},  # Show instructions
+                {"display": "none"},  # Hide results
+                {"display": "none"},  # Hide loading
+                dbc.Alert([html.I(className="fas fa-times-circle me-2"), str(err)], color="danger"),
+                {"display": "none"},  # Hide walk-forward results
             )
-            weights_data = {}
-            for q, wgt in q_wgts.items():
-                wgt_disp = to_rebalance_dates(wgt)
-                weights_data[q] = wgt_disp.to_json(date_format="iso")
 
-        # Handle benchmark
-        if custom_bm_label and bm_data is not None:
-            bm_col_name = f"BM ({custom_bm_label})"
-            bm_aligned = bm_data.reindex(navs.index).ffill().bfill()
-            bm_nav = bm_aligned / bm_aligned.iloc[0] * 1000
-            navs[bm_col_name] = bm_nav
-        elif is_core_satellite and core_tickers_parsed:
-            # Core-satellite BM: same core/satellite split but satellite = equal weight
-            combined_bm_wgt = blend_core_satellite(
-                equal_weight_benchmark(signal), dataset_expanded,
-                core_tickers_parsed, core_weights_parsed, core_ratio,
+        warnings = [
+            dbc.Alert(
+                [html.I(className="fas fa-exclamation-triangle me-2"), msg],
+                color="warning",
+                dismissable=True,
             )
-            combined_bm_wgt_shifted = to_rebalance_dates(combined_bm_wgt)
-            combined_bm_nav, _ = backtest(dataset_expanded, combined_bm_wgt_shifted, tcost=0)
-            bm_col_name = f"BM (Core {core_ratio:.0%} + EW {1-core_ratio:.0%})"
-            navs[bm_col_name] = combined_bm_nav
-        else:
-            bm_col_name = "BM (Equal Weight)"
-            navs[bm_col_name] = universe_bm_nav
-
-        # Apply backtest start date
-        backtest_start = pd.to_datetime(backtest_start_date)
-        actual_start = navs.index[navs.index >= backtest_start]
-        if len(actual_start) > 0:
-            display_start = actual_start[0]
-        else:
-            display_start = navs.index[0]
-
-        # Apply backtest end date
-        backtest_end = pd.to_datetime(backtest_end_date)
-        actual_end = navs.index[navs.index <= backtest_end]
-        if len(actual_end) > 0:
-            display_end = actual_end[-1]
-        else:
-            display_end = navs.index[-1]
-
-        navs_display = navs.loc[display_start:display_end].copy()
-        # Keep full signal (incl. tentative BME row using latest close) for Current Signal panel.
-        # Holdings heatmap uses weights-store (rebalance-date shifted + display_end-truncated), so confirmed-only there.
-        signal_display = signal.copy()
-        truncated_weights = {}
-        for q, wj in weights_data.items():
-            w = pd.read_json(wj)
-            w.index = pd.to_datetime(w.index)
-            w = w.sort_index().loc[:display_end]
-            truncated_weights[q] = w.to_json(date_format="iso")
-        weights_data = truncated_weights
-
-        # Store params
-        params = {
-            "thresh": thresh,
-            "short_window": short_window,
-            "mid_window": mid_window,
-            "long_window": long_window,
-            "short_wgt": short_wgt,
-            "mid_wgt": mid_wgt,
-            "long_wgt": long_wgt,
-            "top_k": top_k,
-            "n_quantiles": n_quantiles,
-            "weight_method": weight_method,
-            "tcost": tcost,
-            "strategy_type": strategy_type,
-            "backtest_start_date": str(backtest_start_date),
-            "backtest_end_date": str(backtest_end_date),
-            "strategy_mode": strategy_mode,
-            "core_ratio": core_ratio if is_core_satellite else None,
-            "core_tickers": core_tickers_parsed if is_core_satellite else None,
-            "bm_col_name": bm_col_name,
-            "custom_bm_label": custom_bm_label if bm_type == "custom" else None,
-            "display_start": display_start.strftime("%Y-%m-%d"),
-            "display_end": navs_display.index[-1].strftime("%Y-%m-%d"),
-            "data_end": dataset.index[-1].strftime("%Y-%m-%d"),
-        }
-
-        # Serialize data for storage
-        dataset_json = dataset.to_json(date_format="iso")
-        bm_data_json = bm_data.to_json(date_format="iso") if bm_data is not None else None
-        navs_json = navs_display.to_json(date_format="iso")
-        signal_json = signal_display.to_json(date_format="iso")
+            for msg in result.warnings
+        ]
 
         return (
-            dataset_json,
-            bm_data_json,
-            params,
-            navs_json,
-            signal_json,
-            weights_data,
+            result.dataset.to_json(date_format="iso"),
+            result.bm_data.to_json(date_format="iso") if result.bm_data is not None else None,
+            result.params,
+            result.navs.to_json(date_format="iso"),
+            result.signal.to_json(date_format="iso"),
+            {name: w.to_json(date_format="iso") for name, w in result.weights.items()},
             {"display": "none"},  # Hide instructions
             {"display": "block"},  # Show results
             {"display": "none"},  # Hide loading
@@ -1012,17 +695,13 @@ def register_callbacks(app):
         kpis = calculate_kpis(navs, benchmark_col=bm_col)
         kpi_cards = []
         for name, metrics in kpis.items():
+            lines = kpi_lines(metrics)
             card = dbc.Col(
                 dbc.Card(
                     dbc.CardBody(
-                        [
-                            html.H5(name, className="card-title"),
-                            html.P(f"CAGR: {metrics['cagr']:.1%}", className="mb-1"),
-                            html.P(f"Vol: {metrics['vol']:.1%}", className="mb-1"),
-                            html.P(f"Sharpe: {metrics['sharpe']:.2f}", className="mb-1"),
-                            html.P(f"MDD: {metrics['mdd']:.1%}", className="mb-1"),
-                            html.P(f"YTD: {metrics['ytd']:.1%}", className="mb-0"),
-                        ]
+                        [html.H5(name, className="card-title")]
+                        + [html.P(line, className="mb-1") for line in lines[:-1]]
+                        + [html.P(lines[-1], className="mb-0")]
                     ),
                     className="h-100",
                 ),
@@ -1046,12 +725,7 @@ def register_callbacks(app):
         )
 
         # Signal History — 마지막 달이 미완이면 컬럼명을 실제 데이터 일자로 표기
-        signal_display = signal.iloc[-5:].T.copy()
-        data_end_ts = pd.to_datetime(params["data_end"])
-        col_labels = [c.strftime("%Y-%m-%d") for c in signal_display.columns]
-        if col_labels and signal_display.columns[-1] > data_end_ts:
-            col_labels[-1] = data_end_ts.strftime("%Y-%m-%d")
-        signal_display.columns = col_labels
+        signal_display = signal_history(signal, params["data_end"])
         raw_signal_table = dash_table.DataTable(
             data=signal_display.reset_index().to_dict("records"),
             columns=[{"name": col, "id": col} for col in ["index"] + list(signal_display.columns)],
@@ -1134,20 +808,7 @@ def register_callbacks(app):
         fig_stats = create_returns_table(stats)
 
         # Stats DataFrame (formatted like the table)
-        formatted_stats = stats.copy()
-        pct_rows = ['cumulative', 'cagr', 'mean', 'vol', 'max', 'min', 'mdd']
-        for row in pct_rows:
-            if row in formatted_stats.index:
-                formatted_stats.loc[row] = formatted_stats.loc[row].apply(lambda x: f'{x:.1%}')
-        ratio_rows = ['sharpe', 'skew', 'kurt']
-        for row in ratio_rows:
-            if row in formatted_stats.index:
-                formatted_stats.loc[row] = formatted_stats.loc[row].apply(lambda x: f'{x:.2f}')
-        if 'nyears' in formatted_stats.index:
-            formatted_stats.loc['nyears'] = formatted_stats.loc['nyears'].apply(lambda x: f'{x:.1f}')
-        if 'nsamples' in formatted_stats.index:
-            formatted_stats.loc['nsamples'] = formatted_stats.loc['nsamples'].apply(lambda x: f'{int(x)}')
-
+        formatted_stats = format_stats(stats)
         stats_df = formatted_stats.T.reset_index()
         stats_df_table = dash_table.DataTable(
             data=stats_df.to_dict("records"),
@@ -1535,7 +1196,7 @@ def register_callbacks(app):
                 opt_core_config = {
                     "tickers": core_tickers,
                     "weights": core_weights,
-                    "ratio": (core_weight_pct or 70) / 100.0,
+                    "ratio": (core_weight_pct or DEFAULT_CORE_WEIGHT_PCT) / 100.0,
                 }
 
         # Progress callback
@@ -1732,7 +1393,7 @@ def register_callbacks(app):
         bm_data = None
         wf_bm_label = None
         if bm_type == "custom" and bm_config:
-            bm_series, bm_label, _ = _build_composite_bm(bm_config, start_date)
+            bm_series, bm_label, _ = build_composite_bm(bm_config, start_date)
             if bm_series is not None:
                 bm_data = bm_series
                 wf_bm_label = bm_label
@@ -1761,7 +1422,7 @@ def register_callbacks(app):
                 wf_core_config = {
                     "tickers": core_tickers,
                     "weights": core_weights,
-                    "ratio": (core_weight_pct or 70) / 100.0,
+                    "ratio": (core_weight_pct or DEFAULT_CORE_WEIGHT_PCT) / 100.0,
                 }
 
         # Progress callback

@@ -4,6 +4,7 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 
+from .metrics import format_stats
 from .portfolio import rebalance_dates
 
 
@@ -704,24 +705,7 @@ def create_returns_table(stats: pd.DataFrame) -> go.Figure:
     Returns:
         Plotly Figure
     """
-    # Format values
-    formatted = stats.copy()
-
-    # Format specific rows
-    pct_rows = ['cumulative', 'cagr', 'mean', 'vol', 'max', 'min', 'mdd']
-    for row in pct_rows:
-        if row in formatted.index:
-            formatted.loc[row] = formatted.loc[row].apply(lambda x: f'{x:.1%}')
-
-    ratio_rows = ['sharpe', 'skew', 'kurt']
-    for row in ratio_rows:
-        if row in formatted.index:
-            formatted.loc[row] = formatted.loc[row].apply(lambda x: f'{x:.2f}')
-
-    if 'nyears' in formatted.index:
-        formatted.loc['nyears'] = formatted.loc['nyears'].apply(lambda x: f'{x:.1f}')
-    if 'nsamples' in formatted.index:
-        formatted.loc['nsamples'] = formatted.loc['nsamples'].apply(lambda x: f'{int(x)}')
+    formatted = format_stats(stats)
 
     fig = go.Figure(data=[go.Table(
         header=dict(

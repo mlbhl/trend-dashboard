@@ -64,6 +64,33 @@ def summary_stats(navs: pd.DataFrame | pd.Series) -> pd.DataFrame:
     return stats
 
 
+def format_stats(stats: pd.DataFrame) -> pd.DataFrame:
+    """summary_stats() as display strings (stats table, stats DataFrame, report)."""
+    formatted = stats.copy().astype(object)
+    for row in ["cumulative", "cagr", "mean", "vol", "max", "min", "mdd"]:
+        if row in formatted.index:
+            formatted.loc[row] = stats.loc[row].apply(lambda x: f"{x:.1%}")
+    for row in ["sharpe", "skew", "kurt"]:
+        if row in formatted.index:
+            formatted.loc[row] = stats.loc[row].apply(lambda x: f"{x:.2f}")
+    if "nyears" in formatted.index:
+        formatted.loc["nyears"] = stats.loc["nyears"].apply(lambda x: f"{x:.1f}")
+    if "nsamples" in formatted.index:
+        formatted.loc["nsamples"] = stats.loc["nsamples"].apply(lambda x: f"{int(x)}")
+    return formatted
+
+
+def kpi_lines(kpi: dict) -> list[str]:
+    """One KPI card's lines, as shown on the dashboard and in the report."""
+    return [
+        f"CAGR: {kpi['cagr']:.1%}",
+        f"Vol: {kpi['vol']:.1%}",
+        f"Sharpe: {kpi['sharpe']:.2f}",
+        f"MDD: {kpi['mdd']:.1%}",
+        f"YTD: {kpi['ytd']:.1%}",
+    ]
+
+
 def rebase(navs: pd.DataFrame | pd.Series, start_date: str | None = None) -> pd.DataFrame:
     """
     Rebase NAV series to start at 100 from a given date.

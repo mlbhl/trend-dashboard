@@ -105,8 +105,13 @@ DEFAULT_LONG_WEIGHT = 0.80
 DEFAULT_TOP_K = 5
 DEFAULT_N_QUANTILES = 5
 DEFAULT_THRESH = 10
-DEFAULT_CAPITAL = 1000
-DEFAULT_TCOST = 0.002
+DEFAULT_WEIGHT_MODE = "custom"        # signal-window weights: "custom" (sliders) or "equal" (1/3 each)
+DEFAULT_STRATEGY_MODE = "single"      # "single" or "core-satellite"
+DEFAULT_CORE_WEIGHT_PCT = 70          # core allocation in core-satellite mode, %
+DEFAULT_STRATEGY_TYPE = "Top-K"       # "Top-K" or "Quantile"
+DEFAULT_WEIGHT_METHOD = "equal"       # see WEIGHT_METHODS
+DEFAULT_TCOST_PCT = 0.0               # one-way transaction cost, % (sidebar input)
+DEFAULT_BM_TYPE = "equal_weight"      # "equal_weight" or "custom"
 
 # Implementation lag: business days from the month-end signal (close) to the rebalance (close).
 #   1 = rebalance at the next business day's close, i.e. the first business day of the next month
