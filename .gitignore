@@ -26,11 +26,8 @@ env/
 .DS_Store
 Thumbs.db
 
-# Streamlit
-.streamlit/secrets.toml
-
 # Dash cache
 cache/
 
-# Daily report log
-reports/cron.log
+# Generated reports (manual: python scripts/generate_report.py)
+reports/
