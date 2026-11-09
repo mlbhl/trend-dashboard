@@ -13,9 +13,11 @@ from src.data import load_price_data
 from src.signals import generate_signal, get_signal_ranking
 from src.portfolio import (
     backtest,
+    blend_core_satellite,
     compute_weight_core,
     compute_weight_top_k,
     compute_weight_quantile,
+    equal_weight_benchmark,
     run_top_k_backtest,
     run_quantile_backtest,
     to_rebalance_dates,
@@ -811,8 +813,10 @@ def register_callbacks(app):
                 sat_wgt_expanded = sat_wgt.reindex(columns=dataset_expanded.columns, fill_value=0.0)
                 core_wgt_aligned = core_wgt.reindex(columns=dataset_expanded.columns, fill_value=0.0)
 
-                # Blend weights
-                combined_wgt = core_ratio * core_wgt_aligned + (1 - core_ratio) * sat_wgt_expanded
+                # Blend weights (same function the optimizer uses)
+                combined_wgt = blend_core_satellite(
+                    sat_wgt, dataset_expanded, core_tickers_parsed, core_weights_parsed, core_ratio
+                )
 
                 # Signal-date weights -> rebalance dates (config.IMPLEMENTATION_LAG)
                 combined_wgt_shifted = to_rebalance_dates(combined_wgt)
@@ -869,13 +873,10 @@ def register_callbacks(app):
             navs[bm_col_name] = bm_nav
         elif is_core_satellite and core_tickers_parsed:
             # Core-satellite BM: same core/satellite split but satellite = equal weight
-            _, bm_sat_wgt = compute_weight_top_k(dataset, signal, top_k=top_k, weight_method=weight_method)
-            bm_sat_expanded = bm_sat_wgt.reindex(columns=dataset_expanded.columns, fill_value=0.0)
-            core_wgt_for_bm = compute_weight_core(
-                dataset_expanded, signal, core_tickers_parsed, core_weights_parsed
+            combined_bm_wgt = blend_core_satellite(
+                equal_weight_benchmark(signal), dataset_expanded,
+                core_tickers_parsed, core_weights_parsed, core_ratio,
             )
-            core_wgt_for_bm = core_wgt_for_bm.reindex(columns=dataset_expanded.columns, fill_value=0.0)
-            combined_bm_wgt = core_ratio * core_wgt_for_bm + (1 - core_ratio) * bm_sat_expanded
             combined_bm_wgt_shifted = to_rebalance_dates(combined_bm_wgt)
             combined_bm_nav, _ = backtest(dataset_expanded, combined_bm_wgt_shifted, tcost=0)
             bm_col_name = f"BM (Core {core_ratio:.0%} + EW {1-core_ratio:.0%})"
@@ -1507,6 +1508,7 @@ def register_callbacks(app):
 
         # Load data
         dataset, _ = load_price_data(selected_tickers, start_date=start_date)
+        universe = list(dataset.columns)  # selectable tickers; core-only tickers are appended later
 
         # Handle parameters
         if select_all:
@@ -1553,6 +1555,7 @@ def register_callbacks(app):
             seed=opt_seed,
             progress_callback=update_progress,
             core_config=opt_core_config,
+            universe=universe,
         )
 
         if result["best_params"] is None:
@@ -1723,6 +1726,7 @@ def register_callbacks(app):
 
         # Load data
         dataset, _ = load_price_data(selected_tickers, start_date=start_date)
+        universe = list(dataset.columns)  # selectable tickers; core-only tickers are appended later
 
         # Load benchmark data if custom
         bm_data = None
@@ -1789,6 +1793,7 @@ def register_callbacks(app):
             bm_data=bm_data,
             progress_callback=update_progress,
             core_config=wf_core_config,
+            universe=universe,
         )
 
         if "error" in wf_result:

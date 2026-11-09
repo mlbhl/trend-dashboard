@@ -7,6 +7,7 @@ from pandas.tseries.offsets import BDay, BMonthBegin
 from src import config
 from src.portfolio import (
     backtest,
+    blend_core_satellite,
     compute_weight_quantile,
     compute_weight_top_k,
     run_quantile_backtest,
@@ -58,6 +59,19 @@ def test_inverse_vol_weighting(prices):
         assert held.sum() == pytest.approx(1.0)
         risk = held * vol.loc[date, held.index]  # w_i * vol_i must be equal across holdings
         assert np.allclose(risk.values, risk.iloc[0])
+
+
+def test_blend_core_satellite(prices):
+    sig = generate_signal(prices)
+    sat, _ = compute_weight_top_k(prices, sig, top_k=5)
+    price_x = prices.assign(SPY=100.0)
+
+    w = blend_core_satellite(sat, price_x, ["SPY", "T00", "MISSING"], [2, 1, 1], 0.6)
+
+    assert list(w.columns) == list(price_x.columns)
+    assert w["SPY"].eq(0.6 * 2 / 4).all()                                   # core share, normalised
+    assert (w["T00"] - 0.6 * 1 / 4 - 0.4 * sat["T00"]).abs().max() < 1e-15  # core + satellite overlap
+    assert np.allclose(w.sum(axis=1), 1 - 0.6 * 1 / 4)                      # missing core ticker = cash
 
 
 # ---------------------------------------------------------------- quantile weights

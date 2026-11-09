@@ -52,6 +52,8 @@ Price Data (Yahoo Finance) → Signal Generation → Portfolio Weights → Backt
 
 **Rebalance timing:** signal weights are indexed by month-end signal date; move them to rebalance dates only via `portfolio.to_rebalance_dates()` / `rebalance_dates()` (reads `config.IMPLEMENTATION_LAG`). Never write `+ BMonthBegin(1)` / `+ BDay(n)` elsewhere — a test scans for it. Holidays are intentionally not skipped.
 
+**Benchmark & core-satellite:** BM = `portfolio.equal_weight_benchmark(signal)` (equal weight across tickers that have a signal — the strategy's own candidate set). Core blending = `portfolio.blend_core_satellite()`. `optimize_sharpe()` / `walk_forward_optimize()` take `universe=` (selectable tickers): in core-satellite mode `price` also carries core-only tickers, which must never enter the signal.
+
 **Backtest rules live only in `portfolio.py`** (`compute_weight_top_k()`, `backtest()`). `optimizer.py` calls them via `_strategy_nav()` / `_benchmark_nav()` — never re-implement the weight or NAV loop there.
 
 **Adding Dash callbacks:** Add to `dash_components/callbacks.py` within `register_callbacks()` function

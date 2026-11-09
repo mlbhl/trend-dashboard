@@ -62,18 +62,30 @@ def compute_outputs() -> dict:
         "combined_oos_bm_nav_last": _scalar(wf["combined_oos_bm_nav"].iloc[-1]),
     }
 
-    # Core-Satellite mode (weights blended with a fixed core) and single-ticker BM path
-    core = {"tickers": ["T00", "T01"], "weights": [2, 1], "ratio": 0.6}
-    opt_c = optimize_sharpe(price, top_k=5, weight_method="inverse_vol", tcost=0.002,
-                            n_samples=8, seed=3, core_config=core)
+    # Core-Satellite mode: core tickers come from outside the selectable universe
+    universe = list(price.columns)
+    core_px = make_prices(n_tickers=2, seed=7).rename(columns={"T00": "CORE_A", "T01": "CORE_B"})
+    price_c = price.join(core_px)
+    core = {"tickers": ["CORE_A", "CORE_B"], "weights": [2, 1], "ratio": 0.6}
+    opt_c = optimize_sharpe(price_c, top_k=5, weight_method="inverse_vol", tcost=0.002,
+                            n_samples=8, seed=3, core_config=core, universe=universe)
     out["optimize_core"] = {"best_params": opt_c["best_params"], "best_sharpe": _scalar(opt_c["best_sharpe"])}
-    wf_c = walk_forward_optimize(price, train_months=24, test_months=12, step_months=12, n_samples=4,
-                                 seed=5, tcost=0.002, core_config=core, bm_ticker="T05", bm_data=price["T05"])
+    wf_c = walk_forward_optimize(price_c, train_months=24, test_months=12, step_months=12, n_samples=4,
+                                 seed=5, tcost=0.002, core_config=core, universe=universe,
+                                 bm_ticker="T05", bm_data=price["T05"])
     out["walk_forward_core"] = {
         "oos_sharpe": _scalar(wf_c["oos_sharpe"]),
         "combined_oos_nav": _monthly(wf_c["combined_oos_nav"]),
         "combined_oos_bm_nav": _monthly(wf_c["combined_oos_bm_nav"]),
     }
+    wf_c_ew = walk_forward_optimize(price_c, train_months=24, test_months=12, step_months=12, n_samples=4,
+                                    seed=6, core_config=core, universe=universe)
+    out["walk_forward_core_ew_bm"] = {"combined_oos_bm_nav": _monthly(wf_c_ew["combined_oos_bm_nav"])}
+
+    # Benchmark with a listing inside the test windows' look-back (price but no signal yet)
+    price_n = make_prices(late_tickers=2, late_start="2017-06-01")
+    wf_n = walk_forward_optimize(price_n, train_months=24, test_months=12, step_months=12, n_samples=3, seed=0)
+    out["walk_forward_new_listing_bm"] = {"combined_oos_bm_nav": _monthly(wf_n["combined_oos_bm_nav"])}
     return json.loads(json.dumps(out, default=float))  # normalise numpy scalars
 
 

@@ -55,6 +55,32 @@ def compute_weight_core(
     return wgt
 
 
+def equal_weight_benchmark(signal: pd.DataFrame) -> pd.DataFrame:
+    """Benchmark weights: equal weight across every ticker with a signal on each date.
+
+    Same candidate set the strategy picks from, so strategy-vs-BM isolates selection skill.
+    Rows with no signal stay 0.
+    """
+    has_signal = signal.notna()
+    return has_signal.div(has_signal.sum(axis=1), axis=0).fillna(0.0)
+
+
+def blend_core_satellite(
+    sat_wgt: pd.DataFrame,
+    price: pd.DataFrame,
+    core_tickers: list[str],
+    core_weights: list[float],
+    core_ratio: float,
+) -> pd.DataFrame:
+    """Core-satellite weights on price's columns: core_ratio * fixed core + (1 - core_ratio) * satellite.
+
+    sat_wgt is indexed by signal date. Core tickers missing from price are dropped (held as cash).
+    """
+    core = compute_weight_core(price, sat_wgt, core_tickers, core_weights)
+    sat = sat_wgt.reindex(columns=price.columns, fill_value=0.0)
+    return core_ratio * core + (1 - core_ratio) * sat
+
+
 def compute_weight_top_k(
     price: pd.DataFrame,
     signal: pd.DataFrame,
@@ -80,10 +106,7 @@ def compute_weight_top_k(
         vol = calc_vol(price).resample('BME').last()
 
     wgt = pd.DataFrame(0., index=signal.index, columns=signal.columns)
-
-    # Benchmark: equal weight across every ticker with a signal (rows with none stay 0)
-    has_signal = signal.notna()
-    bm_wgt = has_signal.div(has_signal.sum(axis=1), axis=0).fillna(0.0)
+    bm_wgt = equal_weight_benchmark(signal)
 
     for date in signal.index:
         row = signal.loc[date]
@@ -138,7 +161,7 @@ def compute_weight_quantile(
     """
     vol = calc_vol(price).resample('BME').last()
 
-    bm_wgt = pd.DataFrame(0.0, index=signal.index, columns=signal.columns)
+    bm_wgt = equal_weight_benchmark(signal)
     q_wgts = {
         f"Q{q}": pd.DataFrame(0.0, index=signal.index, columns=signal.columns)
         for q in range(1, n_quantiles + 1)
@@ -150,8 +173,6 @@ def compute_weight_quantile(
 
         if len(valid) == 0:
             continue
-
-        bm_wgt.loc[date, valid] = 1.0 / len(valid)
 
         s = row.loc[valid].copy()
         if s.nunique() == 1:

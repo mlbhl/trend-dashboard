@@ -8,21 +8,25 @@ import pytest
 
 from src.optimizer import (
     _benchmark_nav,
-    _blend_core_weights,
     _calc_sharpe_from_nav,
     _strategy_nav,
     _strategy_sharpe,
     combine_signals,
+    optimize_sharpe,
     precompute_momentums,
+    walk_forward_optimize,
 )
 from src import config
 from src.portfolio import (
     backtest,
-    compute_weight_core,
+    blend_core_satellite,
     compute_weight_top_k,
+    equal_weight_benchmark,
     run_top_k_backtest,
     to_rebalance_dates,
 )
+
+from conftest import make_prices
 from src.signals import calc_vol, generate_signal
 
 PARAMS = dict(short_window=1, mid_window=3, long_window=11, short_wgt=0.1, mid_wgt=0.1, long_wgt=0.8)
@@ -79,27 +83,79 @@ def test_window_nav_restarts_at_first_rebalance_and_stops_at_end(prices):
 
 
 @pytest.mark.parametrize("lag", [0, 1, 2])
-def test_benchmark_nav_equals_dashboard_benchmark(prices, monkeypatch, lag):
+def test_benchmark_nav_equals_dashboard_benchmark(prices_late, monkeypatch, lag):
+    """BM = equal weight across tickers with a signal. 2016-03: the 3 late tickers already have
+    prices but no signal yet — they must not be in the benchmark."""
     monkeypatch.setattr(config, "IMPLEMENTATION_LAG", lag)
-    sig = generate_signal(prices, **PARAMS)
-    _, bm_wgt = compute_weight_top_k(prices, sig, top_k=5)
-    bm_wgt = to_rebalance_dates(bm_wgt)
-    start = str(bm_wgt.index[3].date())
+    sig = generate_signal(prices_late, **PARAMS, thresh=9)
+    start = "2016-03-01"
+    late = list(prices_late.columns[-3:])
+    assert prices_late.loc["2016-03-01":"2016-03-31", late].notna().all().all()
+    assert sig.loc["2016-03-31", late].isna().all()
 
-    bm_nav, _ = backtest(prices, bm_wgt, capital=1000, tcost=0, start_date=start)
-    opt_bm = _benchmark_nav(prices, tcost=0, start_date=start)
-    pd.testing.assert_series_equal(opt_bm, bm_nav, check_names=False, check_freq=False, rtol=1e-12)
+    bm_wgt = to_rebalance_dates(equal_weight_benchmark(sig))
+    dash_bm, _ = backtest(prices_late, bm_wgt, capital=1000, tcost=0, start_date=start)
+    opt_bm = _benchmark_nav(prices_late, sig, tcost=0, start_date=start)
+    pd.testing.assert_series_equal(opt_bm, dash_bm, check_names=False, check_freq=False, rtol=1e-12)
 
 
-def test_core_blend_matches_dashboard_formula(prices):
-    sig = generate_signal(prices, **PARAMS)
-    sat, _ = compute_weight_top_k(prices, sig, top_k=5)
-    cfg = {"tickers": ["T00", "T01", "NEW"], "weights": [2, 1, 1], "ratio": 0.7}
+# ---------------------------------------------------------------- core-satellite universe
 
-    blended, price_x = _blend_core_weights(sat, prices, cfg)
+CORE = {"tickers": ["CORE_A", "CORE_B"], "weights": [60, 40], "ratio": 0.7}
 
-    assert list(price_x.columns) == list(prices.columns) + ["NEW"]
-    core = compute_weight_core(price_x, sig, cfg["tickers"], cfg["weights"])
-    expected = 0.7 * core + 0.3 * sat.reindex(columns=price_x.columns, fill_value=0.0)
-    pd.testing.assert_frame_equal(blended, expected)
-    assert np.allclose(blended.sum(axis=1), 1.0)
+
+def _with_core_tickers(universe_prices: pd.DataFrame) -> pd.DataFrame:
+    """Add two non-selectable core tickers; CORE_A trends hard so momentum would pick it if allowed."""
+    core = make_prices(n_tickers=2, seed=7).rename(columns={"T00": "CORE_A", "T01": "CORE_B"})
+    core["CORE_A"] = core["CORE_A"] * np.exp(np.arange(len(core)) * 0.002)
+    return universe_prices.join(core)
+
+
+def _dashboard_core_satellite(price_all, universe, params, top_k, weight_method, tcost, start):
+    """Mirror of the dashboard's Run Analysis in core-satellite mode."""
+    sig = generate_signal(price_all[universe], **params, thresh=10)
+    sat, _ = compute_weight_top_k(price_all[universe], sig, top_k=top_k, weight_method=weight_method)
+    comb = blend_core_satellite(sat, price_all, CORE["tickers"], CORE["weights"], CORE["ratio"])
+    nav, _ = backtest(price_all, to_rebalance_dates(comb), capital=1000, tcost=tcost, start_date=start)
+    return nav, sat
+
+
+@pytest.mark.parametrize("weight_method", ["equal", "inverse_vol"])
+def test_core_satellite_optimizer_scores_the_dashboard_strategy(prices, weight_method):
+    universe = list(prices.columns)
+    price_all = _with_core_tickers(prices)
+    start = "2016-06-01"
+
+    res = optimize_sharpe(price_all, top_k=3, weight_method=weight_method, tcost=0.002, start_date=start,
+                          n_samples=6, seed=0, core_config=CORE, universe=universe)
+    nav, sat = _dashboard_core_satellite(price_all, universe, res["best_params"], 3, weight_method, 0.002, start)
+
+    assert res["best_sharpe"] == pytest.approx(_calc_sharpe_from_nav(nav), rel=1e-12)
+    assert set(sat.columns) == set(universe)  # core tickers never compete for satellite slots
+
+
+@pytest.mark.parametrize("with_core", [False, True])
+def test_walk_forward_oos_benchmark_equals_dashboard_benchmark(with_core):
+    """Two tickers list in 2017-06, inside the 2018 test window's look-back: they have prices
+    but no signal during part of the window, so the benchmark definition matters."""
+    universe_prices = make_prices(late_tickers=2, late_start="2017-06-01")
+    universe = list(universe_prices.columns)
+    price_all = _with_core_tickers(universe_prices) if with_core else universe_prices
+    core_cfg = CORE if with_core else None
+
+    wf = walk_forward_optimize(price_all, train_months=24, test_months=12, step_months=12,
+                               n_samples=3, seed=0, core_config=core_cfg, universe=universe)
+    combined_ret = wf["combined_oos_bm_nav"].pct_change()
+    assert len(wf["folds"]) >= 2
+
+    for fold in wf["folds"]:
+        sig = generate_signal(price_all[universe], **fold["params"], thresh=10)
+        bm = equal_weight_benchmark(sig)
+        bm = (blend_core_satellite(bm, price_all, CORE["tickers"], CORE["weights"], CORE["ratio"])
+              if with_core else bm)
+        dash_bm, _ = backtest(price_all[:fold["test_end"]], to_rebalance_dates(bm), capital=1000, tcost=0,
+                              start_date=fold["test_start"])
+        dash_ret = dash_bm.pct_change().dropna()
+        np.testing.assert_allclose(combined_ret.reindex(dash_ret.index).values, dash_ret.values, rtol=1e-10)
+
+

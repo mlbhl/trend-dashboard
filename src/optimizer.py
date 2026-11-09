@@ -4,7 +4,13 @@ import random
 import numpy as np
 import pandas as pd
 
-from .portfolio import backtest, compute_weight_top_k, to_rebalance_dates
+from .portfolio import (
+    backtest,
+    blend_core_satellite,
+    compute_weight_top_k,
+    equal_weight_benchmark,
+    to_rebalance_dates,
+)
 from .signals import calc_vol
 
 
@@ -75,52 +81,16 @@ def combine_signals(
     return sig
 
 
-def _blend_core_weights(
-    wgt: pd.DataFrame,
-    price: pd.DataFrame,
-    core_config: dict,
-) -> tuple[pd.DataFrame, pd.DataFrame]:
+def _with_core(sat_wgt: pd.DataFrame, price: pd.DataFrame, core_config: dict | None) -> pd.DataFrame:
+    """Blend satellite weights with the core exactly as the dashboard does.
+
+    Always returns weights on price's columns: backtest() pairs weights and returns by position.
     """
-    Blend satellite weights with core weights for core-satellite mode.
-
-    Args:
-        wgt: Satellite weight DataFrame (signal index, before the rebalance-date shift)
-        price: Price DataFrame (may need column expansion for core tickers)
-        core_config: Dict with 'tickers', 'weights', 'ratio'
-
-    Returns:
-        (blended_wgt, expanded_price) with aligned columns
-    """
-    core_tickers = core_config["tickers"]
-    core_weights = core_config["weights"]
-    core_ratio = core_config["ratio"]
-
-    # Normalize core weights
-    total = sum(core_weights)
-    norm_weights = [w / total for w in core_weights] if total > 0 else core_weights
-
-    # Expand columns to include core tickers
-    all_cols = list(price.columns)
-    for t in core_tickers:
-        if t not in all_cols:
-            all_cols.append(t)
-
-    # Expand satellite weights
-    sat_expanded = wgt.reindex(columns=all_cols, fill_value=0.0)
-
-    # Build core weights (constant across all dates)
-    core_wgt = pd.DataFrame(0.0, index=wgt.index, columns=all_cols)
-    for t, w in zip(core_tickers, norm_weights):
-        if t in core_wgt.columns:
-            core_wgt[t] = w
-
-    # Blend
-    blended = core_ratio * core_wgt + (1 - core_ratio) * sat_expanded
-
-    # Expand price if needed
-    expanded_price = price.reindex(columns=all_cols)
-
-    return blended, expanded_price
+    if not core_config:
+        return sat_wgt.reindex(columns=price.columns, fill_value=0.0)
+    return blend_core_satellite(
+        sat_wgt, price, core_config["tickers"], core_config["weights"], core_config["ratio"]
+    )
 
 
 def _strategy_weights(
@@ -133,9 +103,7 @@ def _strategy_weights(
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Dashboard top-k weights (+ core blend), moved to their rebalance dates."""
     wgt, _ = compute_weight_top_k(price, signal, top_k=top_k, weight_method=weight_method, vol=vol)
-    if core_config:
-        wgt, price = _blend_core_weights(wgt, price, core_config)
-    return to_rebalance_dates(wgt), price
+    return to_rebalance_dates(_with_core(wgt, price, core_config)), price
 
 
 def _period_nav(
@@ -294,6 +262,7 @@ def optimize_sharpe(
     seed: int | None = None,
     progress_callback=None,
     core_config: dict | None = None,
+    universe: list[str] | None = None,
 ) -> dict:
     """
     Find optimal lookback windows and weights to maximize Sharpe ratio.
@@ -308,15 +277,17 @@ def optimize_sharpe(
         n_samples: Number of random samples to test (None for full grid search)
         seed: Random seed for reproducibility (only used with n_samples)
         progress_callback: Optional callback(current, total) for progress updates
+        universe: Tickers the strategy may select (satellite universe). Defaults to all price
+            columns. In core-satellite mode, price also carries core tickers that are not
+            selectable; they are used only for the core weights.
 
     Returns:
         Dict with optimal parameters and results
     """
-    # Precompute momentums for all windows
-    momentums = precompute_momentums(price)
-
-    # Precompute volatility
-    vol = calc_vol(price).resample('BME').last()
+    # Signals and volatility come only from the selectable universe (as in the dashboard)
+    sat_price = price if universe is None else price[[t for t in universe if t in price.columns]]
+    momentums = precompute_momentums(sat_price)
+    vol = calc_vol(sat_price).resample('BME').last()
 
     # Generate all combinations
     lookback_combos = generate_lookback_combinations()
@@ -421,6 +392,7 @@ def walk_forward_optimize(
     bm_data: pd.Series | None = None,
     progress_callback=None,
     core_config: dict | None = None,
+    universe: list[str] | None = None,
 ) -> dict:
     """
     Walk-forward optimization to reduce overfitting.
@@ -444,15 +416,19 @@ def walk_forward_optimize(
         bm_ticker: Custom benchmark ticker name (None for equal weight)
         bm_data: Custom benchmark price data (required if bm_ticker is set)
         progress_callback: Optional callback(fold, total_folds, step_in_fold, total_steps)
+        universe: Tickers the strategy may select (satellite universe). Defaults to all price
+            columns. In core-satellite mode, price also carries core tickers that are not
+            selectable; they are used only for the core weights.
 
     Returns:
         Dict with fold results, combined OOS performance, parameter stability
     """
     from dateutil.relativedelta import relativedelta
 
-    # Precompute all data once
-    momentums = precompute_momentums(price)
-    vol = calc_vol(price).resample('BME').last()
+    # Precompute all data once — signals/vol only from the selectable universe (as in the dashboard)
+    sat_price = price if universe is None else price[[t for t in universe if t in price.columns]]
+    momentums = precompute_momentums(sat_price)
+    vol = calc_vol(sat_price).resample('BME').last()
 
     # Get date range
     start = price.index[0]
@@ -573,9 +549,10 @@ def walk_forward_optimize(
                 end_date=str(fold['test_end'].date()),
             )
         else:
-            # Equal weight benchmark (no transaction cost for BM)
+            # Equal weight across tickers with a signal, as in the dashboard (no tcost for BM)
             oos_bm_nav = _benchmark_nav(
                 price,
+                signal,
                 tcost=0,
                 start_date=str(fold['test_start'].date()),
                 end_date=str(fold['test_end'].date()),
@@ -732,21 +709,14 @@ def _calc_param_stability(fold_results: list[dict]) -> dict:
 
 def _benchmark_nav(
     price: pd.DataFrame,
+    signal: pd.DataFrame,
     tcost: float = 0.0,
     start_date: str | None = None,
     end_date: str | None = None,
     core_config: dict | None = None,
 ) -> pd.Series | None:
-    """
-    Equal-weight benchmark NAV for a period.
-    Every ticker with a month-end price gets equal weight at each rebalancing.
-    """
-    has_price = price.resample('BME').last().notna().astype(float)
-    wgt = has_price.div(has_price.sum(axis=1), axis=0).fillna(0.0)
-
-    if core_config:
-        wgt, price = _blend_core_weights(wgt, price, core_config)
-
+    """Dashboard benchmark NAV for a period: equal weight across tickers with a signal (+ core blend)."""
+    wgt = _with_core(equal_weight_benchmark(signal), price, core_config)
     return _period_nav(price, to_rebalance_dates(wgt), tcost, start_date, end_date)
 
 
