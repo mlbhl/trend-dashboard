@@ -1,10 +1,7 @@
 """Data loading and preprocessing functions."""
 
-import warnings
 import pandas as pd
 import yfinance as yf
-
-warnings.filterwarnings(action='ignore')
 
 
 def load_price_data(

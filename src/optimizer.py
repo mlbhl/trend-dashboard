@@ -3,8 +3,8 @@
 import random
 import numpy as np
 import pandas as pd
-from pandas.tseries.offsets import BMonthBegin
 
+from .portfolio import backtest, compute_weight_top_k, to_rebalance_dates
 from .signals import calc_vol
 
 
@@ -84,7 +84,7 @@ def _blend_core_weights(
     Blend satellite weights with core weights for core-satellite mode.
 
     Args:
-        wgt: Satellite weight DataFrame (signal index, before BMonthBegin shift)
+        wgt: Satellite weight DataFrame (signal index, before the rebalance-date shift)
         price: Price DataFrame (may need column expansion for core tickers)
         core_config: Dict with 'tickers', 'weights', 'ratio'
 
@@ -123,7 +123,60 @@ def _blend_core_weights(
     return blended, expanded_price
 
 
-def fast_backtest_sharpe(
+def _strategy_weights(
+    price: pd.DataFrame,
+    signal: pd.DataFrame,
+    vol: pd.DataFrame,
+    top_k: int | None,
+    weight_method: str,
+    core_config: dict | None,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Dashboard top-k weights (+ core blend), moved to their rebalance dates."""
+    wgt, _ = compute_weight_top_k(price, signal, top_k=top_k, weight_method=weight_method, vol=vol)
+    if core_config:
+        wgt, price = _blend_core_weights(wgt, price, core_config)
+    return to_rebalance_dates(wgt), price
+
+
+def _period_nav(
+    price: pd.DataFrame,
+    wgt: pd.DataFrame,
+    tcost: float,
+    start_date: str | None = None,
+    end_date: str | None = None,
+) -> pd.Series | None:
+    """portfolio.backtest() on [start_date, end_date], starting from the first rebalance in the window.
+
+    Returns None when no rebalance date falls inside the window.
+    """
+    if end_date is not None:
+        end_date = pd.to_datetime(end_date)
+        price, wgt = price[:end_date], wgt[:end_date]
+    if start_date is not None:
+        wgt = wgt[wgt.index >= pd.to_datetime(start_date)]
+    if len(wgt) == 0 or len(price[wgt.index[0]:]) == 0:
+        return None
+    nav, _ = backtest(price, wgt, capital=1000.0, tcost=tcost)
+    return nav.dropna()
+
+
+def _strategy_nav(
+    price: pd.DataFrame,
+    signal: pd.DataFrame,
+    vol: pd.DataFrame,
+    top_k: int | None = 5,
+    weight_method: str = "equal",
+    tcost: float = 0.0,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    core_config: dict | None = None,
+) -> pd.Series | None:
+    """Strategy NAV for a period, using the same weight and backtest code as the dashboard."""
+    wgt, price = _strategy_weights(price, signal, vol, top_k, weight_method, core_config)
+    return _period_nav(price, wgt, tcost, start_date, end_date)
+
+
+def _strategy_sharpe(
     price: pd.DataFrame,
     signal: pd.DataFrame,
     vol: pd.DataFrame,
@@ -133,109 +186,9 @@ def fast_backtest_sharpe(
     start_date: str | None = None,
     core_config: dict | None = None,
 ) -> float:
-    """
-    Fast backtest returning only Sharpe ratio.
-    Optimized version that skips unnecessary calculations.
-    """
-    # Compute weights
-    wgt = pd.DataFrame(0., index=signal.index, columns=signal.columns)
-
-    for date in signal.index:
-        row = signal.loc[date]
-        valid = row[~row.isna()].index
-
-        if top_k is None:
-            selected = valid
-        else:
-            selected = row[row <= top_k].index
-
-        if len(selected) == 0:
-            continue
-
-        if weight_method == "inverse_vol":
-            inv_vol = 1 / vol.loc[date, selected]
-            inv_vol = inv_vol.replace([np.inf, -np.inf], np.nan).dropna()
-            if len(inv_vol) == 0:
-                continue
-            w = inv_vol / inv_vol.sum()
-        elif weight_method == "rank":
-            ranks = row.loc[selected]
-            converted_rank = len(selected) + 1 - ranks
-            w = converted_rank / converted_rank.sum()
-        else:  # equal
-            w = pd.Series(1.0 / len(selected), index=selected)
-
-        wgt.loc[date, selected] = w
-
-    # Blend with core weights if core-satellite mode
-    if core_config:
-        wgt, price = _blend_core_weights(wgt, price, core_config)
-
-    # Shift weights to next month
-    wgt.index = wgt.index + BMonthBegin(1)
-
-    # Backtest
-    if start_date is None:
-        start_date = wgt.index[0]
-        weight_dates = wgt.index
-    else:
-        start_date = pd.to_datetime(start_date)
-        valid_dates = wgt.index[wgt.index >= start_date]
-        if len(valid_dates) == 0:
-            return np.nan
-        start_date = valid_dates[0]
-        weight_dates = wgt[start_date:].index
-
-    ret = price.pct_change()
-    ret_sub = ret[start_date:].fillna(0.)
-    all_dates = ret_sub.index
-
-    if len(all_dates) == 0:
-        return np.nan
-
-    capital = 1000.0
-    nav = pd.Series(index=all_dates, dtype=float)
-    nav.loc[start_date] = capital
-    dollar_pos = None
-    prev_w = None
-
-    for i, date in enumerate(all_dates):
-        if date in weight_dates:
-            if date != start_date:
-                prev_date = all_dates[i - 1]
-                prev_equity = nav.loc[prev_date]
-                dollar_pnl = dollar_pos * ret_sub.loc[date].values
-                dollar_pos += dollar_pnl
-                prev_w = dollar_pos / dollar_pos.sum()
-                new_w = wgt.loc[date].values
-                turn = np.sum(np.abs(new_w - prev_w)) / 2
-                equity_after_cost = (prev_equity + dollar_pnl.sum()) * (1 - turn * tcost * 2)
-            else:
-                new_w = wgt.loc[date].values
-                equity_after_cost = capital
-
-            nav.loc[date] = equity_after_cost
-            dollar_pos = new_w * equity_after_cost
-            prev_w = new_w.copy()
-        else:
-            prev_date = all_dates[i - 1]
-            prev_equity = nav.loc[prev_date]
-            dollar_pnl = dollar_pos * ret_sub.loc[date].values
-            dollar_pos += dollar_pnl
-            nav.loc[date] = prev_equity + dollar_pnl.sum()
-            prev_w = dollar_pos / dollar_pos.sum()
-
-    # Calculate Sharpe
-    nav = nav.dropna()
-    if len(nav) < 2:
-        return np.nan
-
-    daily_ret = nav.pct_change().dropna()
-    if len(daily_ret) == 0 or daily_ret.std() == 0:
-        return np.nan
-
-    sharpe = daily_ret.mean() / daily_ret.std() * np.sqrt(252)
-    return sharpe
+    """Sharpe ratio of the strategy from start_date (price is already cut to the training window)."""
+    nav = _strategy_nav(price, signal, vol, top_k, weight_method, tcost, start_date, core_config=core_config)
+    return _calc_sharpe_from_nav(nav)
 
 
 def optimize_sharpe_period(
@@ -294,7 +247,7 @@ def optimize_sharpe_period(
                 progress_callback(current, total)
             continue
 
-        sharpe = fast_backtest_sharpe(
+        sharpe = _strategy_sharpe(
             price, signal, vol,
             top_k=top_k,
             weight_method=weight_method,
@@ -404,7 +357,7 @@ def optimize_sharpe(
             continue
 
         # Run fast backtest
-        sharpe = fast_backtest_sharpe(
+        sharpe = _strategy_sharpe(
             price, signal, vol,
             top_k=top_k,
             weight_method=weight_method,
@@ -601,7 +554,7 @@ def walk_forward_optimize(
         )
 
         # Get OOS NAV for this fold
-        oos_nav = fast_backtest_nav(
+        oos_nav = _strategy_nav(
             price, signal, vol,
             top_k=top_k,
             weight_method=weight_method,
@@ -614,14 +567,14 @@ def walk_forward_optimize(
         # Get OOS Benchmark NAV for this fold
         if bm_ticker and bm_data is not None:
             # Custom ticker benchmark (buy and hold)
-            oos_bm_nav = fast_single_ticker_nav(
+            oos_bm_nav = _single_ticker_nav(
                 bm_data,
                 start_date=str(fold['test_start'].date()),
                 end_date=str(fold['test_end'].date()),
             )
         else:
             # Equal weight benchmark (no transaction cost for BM)
-            oos_bm_nav = fast_benchmark_nav(
+            oos_bm_nav = _benchmark_nav(
                 price,
                 tcost=0,
                 start_date=str(fold['test_start'].date()),
@@ -728,117 +681,6 @@ def walk_forward_optimize(
     }
 
 
-def fast_backtest_nav(
-    price: pd.DataFrame,
-    signal: pd.DataFrame,
-    vol: pd.DataFrame,
-    top_k: int | None = 5,
-    weight_method: str = "equal",
-    tcost: float = 0.0,
-    start_date: str | None = None,
-    end_date: str | None = None,
-    core_config: dict | None = None,
-) -> pd.Series | None:
-    """
-    Fast backtest returning NAV series for a specific period.
-    """
-    # Compute weights
-    wgt = pd.DataFrame(0., index=signal.index, columns=signal.columns)
-
-    for date in signal.index:
-        row = signal.loc[date]
-        valid = row[~row.isna()].index
-
-        if top_k is None:
-            selected = valid
-        else:
-            selected = row[row <= top_k].index
-
-        if len(selected) == 0:
-            continue
-
-        if weight_method == "inverse_vol":
-            inv_vol = 1 / vol.loc[date, selected]
-            inv_vol = inv_vol.replace([np.inf, -np.inf], np.nan).dropna()
-            if len(inv_vol) == 0:
-                continue
-            w = inv_vol / inv_vol.sum()
-        elif weight_method == "rank":
-            ranks = row.loc[selected]
-            converted_rank = len(selected) + 1 - ranks
-            w = converted_rank / converted_rank.sum()
-        else:
-            w = pd.Series(1.0 / len(selected), index=selected)
-
-        wgt.loc[date, selected] = w
-
-    # Blend with core weights if core-satellite mode
-    if core_config:
-        wgt, price = _blend_core_weights(wgt, price, core_config)
-
-    wgt.index = wgt.index + BMonthBegin(1)
-
-    # Determine date range
-    if start_date is None:
-        start_date = wgt.index[0]
-    else:
-        start_date = pd.to_datetime(start_date)
-
-    if end_date is not None:
-        end_date = pd.to_datetime(end_date)
-
-    valid_dates = wgt.index[wgt.index >= start_date]
-    if end_date is not None:
-        valid_dates = valid_dates[valid_dates <= end_date]
-
-    if len(valid_dates) == 0:
-        return None
-
-    start_date = valid_dates[0]
-    weight_dates = wgt[start_date:end_date].index if end_date else wgt[start_date:].index
-
-    ret = price.pct_change()
-    ret_sub = ret[start_date:end_date].fillna(0.) if end_date else ret[start_date:].fillna(0.)
-    all_dates = ret_sub.index
-
-    if len(all_dates) == 0:
-        return None
-
-    capital = 1000.0
-    nav = pd.Series(index=all_dates, dtype=float)
-    nav.loc[start_date] = capital
-    dollar_pos = None
-    prev_w = None
-
-    for i, date in enumerate(all_dates):
-        if date in weight_dates:
-            if date != start_date:
-                prev_date = all_dates[i - 1]
-                prev_equity = nav.loc[prev_date]
-                dollar_pnl = dollar_pos * ret_sub.loc[date].values
-                dollar_pos += dollar_pnl
-                prev_w = dollar_pos / dollar_pos.sum()
-                new_w = wgt.loc[date].values
-                turn = np.sum(np.abs(new_w - prev_w)) / 2
-                equity_after_cost = (prev_equity + dollar_pnl.sum()) * (1 - turn * tcost * 2)
-            else:
-                new_w = wgt.loc[date].values
-                equity_after_cost = capital
-
-            nav.loc[date] = equity_after_cost
-            dollar_pos = new_w * equity_after_cost
-            prev_w = new_w.copy()
-        else:
-            prev_date = all_dates[i - 1]
-            prev_equity = nav.loc[prev_date]
-            dollar_pnl = dollar_pos * ret_sub.loc[date].values
-            dollar_pos += dollar_pnl
-            nav.loc[date] = prev_equity + dollar_pnl.sum()
-            prev_w = dollar_pos / dollar_pos.sum()
-
-    return nav.dropna()
-
-
 def _calc_sharpe_from_nav(nav: pd.Series | None) -> float:
     """Calculate Sharpe ratio from NAV series."""
     if nav is None or len(nav) < 2:
@@ -888,7 +730,7 @@ def _calc_param_stability(fold_results: list[dict]) -> dict:
     return stability
 
 
-def fast_benchmark_nav(
+def _benchmark_nav(
     price: pd.DataFrame,
     tcost: float = 0.0,
     start_date: str | None = None,
@@ -896,88 +738,19 @@ def fast_benchmark_nav(
     core_config: dict | None = None,
 ) -> pd.Series | None:
     """
-    Compute equal-weight benchmark NAV for a specific period.
-    All available tickers get equal weight at each rebalancing.
+    Equal-weight benchmark NAV for a period.
+    Every ticker with a month-end price gets equal weight at each rebalancing.
     """
-    # Resample to monthly for rebalancing dates
-    price_m = price.resample('BME').last()
+    has_price = price.resample('BME').last().notna().astype(float)
+    wgt = has_price.div(has_price.sum(axis=1), axis=0).fillna(0.0)
 
-    # Compute equal weights for all valid tickers at each month
-    wgt = pd.DataFrame(0., index=price_m.index, columns=price_m.columns)
-    for date in price_m.index:
-        valid = price_m.loc[date].dropna().index
-        if len(valid) > 0:
-            wgt.loc[date, valid] = 1.0 / len(valid)
-
-    # Blend with core weights if core-satellite mode
     if core_config:
         wgt, price = _blend_core_weights(wgt, price, core_config)
 
-    # Shift weights to next month beginning
-    wgt.index = wgt.index + BMonthBegin(1)
-
-    # Determine date range
-    if start_date is None:
-        start_date = wgt.index[0]
-    else:
-        start_date = pd.to_datetime(start_date)
-
-    if end_date is not None:
-        end_date = pd.to_datetime(end_date)
-
-    valid_dates = wgt.index[wgt.index >= start_date]
-    if end_date is not None:
-        valid_dates = valid_dates[valid_dates <= end_date]
-
-    if len(valid_dates) == 0:
-        return None
-
-    start_date = valid_dates[0]
-    weight_dates = wgt[start_date:end_date].index if end_date else wgt[start_date:].index
-
-    ret = price.pct_change()
-    ret_sub = ret[start_date:end_date].fillna(0.) if end_date else ret[start_date:].fillna(0.)
-    all_dates = ret_sub.index
-
-    if len(all_dates) == 0:
-        return None
-
-    capital = 1000.0
-    nav = pd.Series(index=all_dates, dtype=float)
-    nav.loc[start_date] = capital
-    dollar_pos = None
-    prev_w = None
-
-    for i, date in enumerate(all_dates):
-        if date in weight_dates:
-            if date != start_date:
-                prev_date = all_dates[i - 1]
-                prev_equity = nav.loc[prev_date]
-                dollar_pnl = dollar_pos * ret_sub.loc[date].values
-                dollar_pos += dollar_pnl
-                prev_w = dollar_pos / dollar_pos.sum()
-                new_w = wgt.loc[date].values
-                turn = np.sum(np.abs(new_w - prev_w)) / 2
-                equity_after_cost = (prev_equity + dollar_pnl.sum()) * (1 - turn * tcost * 2)
-            else:
-                new_w = wgt.loc[date].values
-                equity_after_cost = capital
-
-            nav.loc[date] = equity_after_cost
-            dollar_pos = new_w * equity_after_cost
-            prev_w = new_w.copy()
-        else:
-            prev_date = all_dates[i - 1]
-            prev_equity = nav.loc[prev_date]
-            dollar_pnl = dollar_pos * ret_sub.loc[date].values
-            dollar_pos += dollar_pnl
-            nav.loc[date] = prev_equity + dollar_pnl.sum()
-            prev_w = dollar_pos / dollar_pos.sum()
-
-    return nav.dropna()
+    return _period_nav(price, to_rebalance_dates(wgt), tcost, start_date, end_date)
 
 
-def fast_single_ticker_nav(
+def _single_ticker_nav(
     price_series: pd.Series,
     start_date: str | None = None,
     end_date: str | None = None,

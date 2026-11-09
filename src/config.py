@@ -108,6 +108,13 @@ DEFAULT_THRESH = 10
 DEFAULT_CAPITAL = 1000
 DEFAULT_TCOST = 0.002
 
+# Implementation lag: business days from the month-end signal (close) to the rebalance (close).
+#   1 = rebalance at the next business day's close, i.e. the first business day of the next month
+#   0 = rebalance at the signal day's close (no lag)
+# Applies everywhere (dashboard, optimizer, walk-forward, report). Business days are weekdays:
+# exchange holidays are not skipped, so a holiday rebalance trades at the forward-filled prior close.
+IMPLEMENTATION_LAG = 1
+
 # Weight method options
 WEIGHT_METHODS = {
     "Equal Weight": "equal",

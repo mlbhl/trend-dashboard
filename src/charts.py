@@ -4,6 +4,8 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 
+from .portfolio import rebalance_dates
+
 
 def create_nav_chart(
     navs: pd.DataFrame,
@@ -296,11 +298,11 @@ def create_quantile_holding_heatmap(
                 ticker_q[ticker] = q_num
 
     # Get signal ranking for sorting within quantile — use the signal row that
-    # produced the latest displayed weight column (BME signal -> BMB(1) implementation)
+    # produced the latest displayed weight column (signal date -> rebalance date)
     # to keep heatmap content and sort order aligned.
     ticker_rank = {}
     if signal is not None and len(signal) > 0:
-        shifted = pd.DatetimeIndex(signal.index) + pd.offsets.BMonthBegin(1)
+        shifted = rebalance_dates(signal.index)
         mask = shifted <= last_date
         last_signal = signal.loc[mask].iloc[-1] if mask.any() else signal.iloc[-1]
         for ticker in all_tickers:

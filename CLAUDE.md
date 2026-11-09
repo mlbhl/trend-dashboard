@@ -21,7 +21,7 @@ Price Data (Yahoo Finance) → Signal Generation → Portfolio Weights → Backt
 ```
 
 **Module Organization (`src/`):**
-- `config.py` - Ticker presets (5; default `Alpha (Default)` = 20 ETFs), window parameters, weight methods
+- `config.py` - Ticker presets (5; default `Alpha (Default)` = 20 ETFs), window parameters, weight methods, `IMPLEMENTATION_LAG` (business days from month-end signal to rebalance; default 1)
 - `data.py` - `load_price_data()` downloads and aligns daily prices from yfinance
 - `signals.py` - `generate_signal()` computes multi-window momentum rankings (cross-sectional)
 - `portfolio.py` - `compute_weight_top_k()`, `compute_weight_quantile()`, and `backtest()` engine
@@ -50,10 +50,24 @@ Price Data (Yahoo Finance) → Signal Generation → Portfolio Weights → Backt
 
 **Adding a strategy variant:** Implement weight computation in `portfolio.py` following `compute_weight_top_k()` pattern
 
+**Rebalance timing:** signal weights are indexed by month-end signal date; move them to rebalance dates only via `portfolio.to_rebalance_dates()` / `rebalance_dates()` (reads `config.IMPLEMENTATION_LAG`). Never write `+ BMonthBegin(1)` / `+ BDay(n)` elsewhere — a test scans for it. Holidays are intentionally not skipped.
+
+**Backtest rules live only in `portfolio.py`** (`compute_weight_top_k()`, `backtest()`). `optimizer.py` calls them via `_strategy_nav()` / `_benchmark_nav()` — never re-implement the weight or NAV loop there.
+
 **Adding Dash callbacks:** Add to `dash_components/callbacks.py` within `register_callbacks()` function
 
 ## Code Style
 
 - Python 3.10+ with type hints using union syntax (`pd.DataFrame | pd.Series`)
 - Pandas for data manipulation, Plotly for charts
-- No test suite currently configured
+- Do not add global `warnings.filterwarnings('ignore')` — warnings must stay visible (a global filter hid pandas deprecations before)
+
+## Testing
+
+```bash
+python -m pytest
+```
+- Network-free (synthetic prices), ~5s. pytest is a dev tool and is not in `requirements.txt`.
+- `pytest.ini` turns `FutureWarning` into errors so pandas deprecations fail fast.
+- `tests/test_optimizer_consistency.py` checks the optimizer scores parameters exactly like the dashboard: momentum cache (`combine_signals`) == `generate_signal`, and train/test windows == `portfolio.backtest` run on that window with full-history volatility.
+- `tests/test_golden.py` snapshots end-to-end numbers in `tests/golden/core_outputs.json`. After an *intentional* math change: `UPDATE_GOLDEN=1 python -m pytest tests/test_golden.py`, then review the JSON diff before committing.

@@ -26,5 +26,8 @@ Thumbs.db
 # Dash cache
 cache/
 
+# pytest
+.pytest_cache/
+
 # Generated reports (manual: python scripts/generate_report.py)
 reports/

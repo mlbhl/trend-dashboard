@@ -2,9 +2,28 @@
 
 import numpy as np
 import pandas as pd
-from pandas.tseries.offsets import BMonthBegin
+from pandas.tseries.offsets import BDay
 
+from . import config
 from .signals import calc_vol
+
+
+def rebalance_dates(signal_dates, lag: int | None = None) -> pd.DatetimeIndex:
+    """Rebalance date for each month-end signal date: `lag` business days later.
+
+    `lag` defaults to config.IMPLEMENTATION_LAG. Every weight series (backtests, holdings
+    displays, optimizer) goes through here so they all share one lag.
+    """
+    if lag is None:
+        lag = config.IMPLEMENTATION_LAG
+    return pd.DatetimeIndex(signal_dates) + BDay(lag)
+
+
+def to_rebalance_dates(weights: pd.DataFrame, lag: int | None = None) -> pd.DataFrame:
+    """Copy of signal-date (month-end) weights, re-indexed to their rebalance dates."""
+    shifted = weights.copy()
+    shifted.index = rebalance_dates(weights.index, lag)
+    return shifted
 
 
 def compute_weight_core(
@@ -41,6 +60,7 @@ def compute_weight_top_k(
     signal: pd.DataFrame,
     top_k: int | None = 5,
     weight_method: str = "equal",
+    vol: pd.DataFrame | None = None,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """
     Compute portfolio weights selecting top-k ranked assets.
@@ -50,21 +70,24 @@ def compute_weight_top_k(
         signal: Signal DataFrame with rankings (1 = best)
         top_k: Number of top-ranked assets to select (None for all)
         weight_method: Weighting method - "equal", "inverse_vol", or "rank"
+        vol: Precomputed month-end volatility; computed from `price` when None.
+            The optimizer passes full-history vol while `price` is a training-window slice.
 
     Returns:
         Tuple of (portfolio weights, benchmark weights)
     """
-    vol = calc_vol(price).resample('BME').last()
+    if vol is None:
+        vol = calc_vol(price).resample('BME').last()
 
     wgt = pd.DataFrame(0., index=signal.index, columns=signal.columns)
-    bm_wgt = pd.DataFrame(0., index=signal.index, columns=signal.columns)
+
+    # Benchmark: equal weight across every ticker with a signal (rows with none stay 0)
+    has_signal = signal.notna()
+    bm_wgt = has_signal.div(has_signal.sum(axis=1), axis=0).fillna(0.0)
 
     for date in signal.index:
         row = signal.loc[date]
         valid = row[~row.isna()].index
-
-        if len(valid) > 0:
-            bm_wgt.loc[date, valid] = 1.0 / len(valid)
 
         # Select top-k or all valid tickers
         if top_k is None:
@@ -78,6 +101,8 @@ def compute_weight_top_k(
         if weight_method == "inverse_vol":
             inv_vol = 1 / vol.loc[date, selected]
             inv_vol = inv_vol.replace([np.inf, -np.inf], np.nan).dropna()
+            if len(inv_vol) == 0:
+                continue
             w = inv_vol / inv_vol.sum()
         elif weight_method == "rank":
             # Weight by rank (best ticker gets highest rank)
@@ -190,7 +215,9 @@ def backtest(
         start_date = weight[start_date:].index[0]
         weight_dates = weight[start_date:].index
 
-    ret = price.pct_change()
+    # Explicit ffill == pandas' legacy pct_change() padding, without its deprecation warning
+    # (raised when a column is all-NaN, e.g. a ticker not yet listed in an optimizer training window)
+    ret = price.ffill().pct_change(fill_method=None)
     ret_sub = ret[start_date:].fillna(0.)
     all_dates = ret_sub.index
 
@@ -248,16 +275,15 @@ def run_quantile_backtest(
     """
     q_wgts, bm_wgt = compute_weight_quantile(price, signal, n_quantiles, weight_method)
 
-    # Shift weights to next month beginning
-    bm_wgt.index = bm_wgt.index + BMonthBegin(1)
+    # Signal-date weights -> rebalance dates (config.IMPLEMENTATION_LAG)
+    bm_wgt = to_rebalance_dates(bm_wgt)
     bm_nav, _ = backtest(price, bm_wgt, capital=capital, tcost=0)
     bm_nav.name = 'BM'
 
     q_nav = {}
     q_to = {}
     for q in range(1, n_quantiles + 1):
-        wgt = q_wgts[f"Q{q}"]
-        wgt.index = wgt.index + BMonthBegin(1)
+        wgt = to_rebalance_dates(q_wgts[f"Q{q}"])
         nav, turnover = backtest(price, wgt, capital=capital, tcost=tcost)
         q_nav[f"Q{q}"] = nav
         q_to[f"Q{q}"] = turnover
@@ -290,11 +316,11 @@ def run_top_k_backtest(
     """
     top_wgt, bm_wgt = compute_weight_top_k(price, signal, top_k, weight_method)
 
-    # Shift weights to next month beginning
-    bm_wgt.index = bm_wgt.index + BMonthBegin(1)
+    # Signal-date weights -> rebalance dates (config.IMPLEMENTATION_LAG)
+    bm_wgt = to_rebalance_dates(bm_wgt)
     bm_nav, _ = backtest(price, bm_wgt, capital=capital, tcost=0)
 
-    top_wgt.index = top_wgt.index + BMonthBegin(1)
+    top_wgt = to_rebalance_dates(top_wgt)
     top_nav, turnover = backtest(price, top_wgt, capital=capital, tcost=tcost)
 
     return top_nav, bm_nav, turnover

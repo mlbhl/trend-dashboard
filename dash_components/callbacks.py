@@ -7,7 +7,6 @@ from dash import Input, Output, State, dcc, html, dash_table, ALL
 from dash.exceptions import PreventUpdate
 import dash_bootstrap_components as dbc
 import plotly.graph_objects as go
-from pandas.tseries.offsets import BMonthBegin
 
 from src.config import TICKER_PRESETS, DEFAULT_PRESET, TICKER_DESCRIPTIONS
 from src.data import load_price_data
@@ -19,6 +18,7 @@ from src.portfolio import (
     compute_weight_quantile,
     run_top_k_backtest,
     run_quantile_backtest,
+    to_rebalance_dates,
 )
 from src.metrics import summary_stats, rebase, calculate_kpis, annual_returns, monthly_returns
 from src.charts import (
@@ -814,13 +814,10 @@ def register_callbacks(app):
                 # Blend weights
                 combined_wgt = core_ratio * core_wgt_aligned + (1 - core_ratio) * sat_wgt_expanded
 
-                # Shift to next month beginning
-                combined_wgt_shifted = combined_wgt.copy()
-                combined_wgt_shifted.index = combined_wgt_shifted.index + BMonthBegin(1)
-                core_wgt_shifted = core_wgt_aligned.copy()
-                core_wgt_shifted.index = core_wgt_shifted.index + BMonthBegin(1)
-                sat_wgt_shifted = sat_wgt_expanded.copy()
-                sat_wgt_shifted.index = sat_wgt_shifted.index + BMonthBegin(1)
+                # Signal-date weights -> rebalance dates (config.IMPLEMENTATION_LAG)
+                combined_wgt_shifted = to_rebalance_dates(combined_wgt)
+                core_wgt_shifted = to_rebalance_dates(core_wgt_aligned)
+                sat_wgt_shifted = to_rebalance_dates(sat_wgt_expanded)
 
                 # Run backtests
                 combined_nav, _ = backtest(dataset_expanded, combined_wgt_shifted, tcost=tcost)
@@ -839,13 +836,11 @@ def register_callbacks(app):
                     f"Core ({core_label})": core_nav_only,
                     f"Satellite ({strat_name})": sat_nav_only,
                 })
-                sat_wgt_disp = sat_wgt.copy()
-                sat_wgt_disp.index = sat_wgt_disp.index + BMonthBegin(1)
+                sat_wgt_disp = to_rebalance_dates(sat_wgt)
                 weights_data = {strat_name: sat_wgt_disp.to_json(date_format="iso")}
             else:
                 navs = pd.DataFrame({strat_name: strat_nav})
-                sat_wgt_disp = sat_wgt.copy()
-                sat_wgt_disp.index = sat_wgt_disp.index + BMonthBegin(1)
+                sat_wgt_disp = to_rebalance_dates(sat_wgt)
                 weights_data = {strat_name: sat_wgt_disp.to_json(date_format="iso")}
         else:
             q_nav, q_to, universe_bm_nav = run_quantile_backtest(
@@ -863,8 +858,7 @@ def register_callbacks(app):
             )
             weights_data = {}
             for q, wgt in q_wgts.items():
-                wgt_disp = wgt.copy()
-                wgt_disp.index = wgt_disp.index + BMonthBegin(1)
+                wgt_disp = to_rebalance_dates(wgt)
                 weights_data[q] = wgt_disp.to_json(date_format="iso")
 
         # Handle benchmark
@@ -882,8 +876,7 @@ def register_callbacks(app):
             )
             core_wgt_for_bm = core_wgt_for_bm.reindex(columns=dataset_expanded.columns, fill_value=0.0)
             combined_bm_wgt = core_ratio * core_wgt_for_bm + (1 - core_ratio) * bm_sat_expanded
-            combined_bm_wgt_shifted = combined_bm_wgt.copy()
-            combined_bm_wgt_shifted.index = combined_bm_wgt_shifted.index + BMonthBegin(1)
+            combined_bm_wgt_shifted = to_rebalance_dates(combined_bm_wgt)
             combined_bm_nav, _ = backtest(dataset_expanded, combined_bm_wgt_shifted, tcost=0)
             bm_col_name = f"BM (Core {core_ratio:.0%} + EW {1-core_ratio:.0%})"
             navs[bm_col_name] = combined_bm_nav
@@ -909,7 +902,7 @@ def register_callbacks(app):
 
         navs_display = navs.loc[display_start:display_end].copy()
         # Keep full signal (incl. tentative BME row using latest close) for Current Signal panel.
-        # Holdings heatmap uses weights-store (BMB-shifted + display_end-truncated), so confirmed-only there.
+        # Holdings heatmap uses weights-store (rebalance-date shifted + display_end-truncated), so confirmed-only there.
         signal_display = signal.copy()
         truncated_weights = {}
         for q, wj in weights_data.items():

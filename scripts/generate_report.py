@@ -10,7 +10,6 @@ from datetime import datetime
 from pathlib import Path
 
 import pandas as pd
-from pandas.tseries.offsets import BMonthBegin
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
@@ -46,7 +45,7 @@ from src.metrics import (
     rebase,
     summary_stats,
 )
-from src.portfolio import compute_weight_top_k, run_top_k_backtest
+from src.portfolio import compute_weight_top_k, run_top_k_backtest, to_rebalance_dates
 from src.signals import generate_signal, get_signal_ranking
 
 
@@ -76,11 +75,11 @@ def run_default_analysis(dataset: pd.DataFrame) -> dict:
     bm_col = "BM (Equal Weight)"
     navs = pd.DataFrame({strat_name: strat_nav, bm_col: bm_nav})
 
-    # Holdings heatmap용 가중치 — BMonthBegin(1) shift가 실제 적용 시점
+    # Holdings heatmap용 가중치 — 리밸런싱일(config.IMPLEMENTATION_LAG) 기준이 실제 적용 시점
     wgt, _ = compute_weight_top_k(
         dataset, signal, top_k=DEFAULT_TOP_K, weight_method="equal"
     )
-    wgt.index = wgt.index + BMonthBegin(1)
+    wgt = to_rebalance_dates(wgt)
 
     # 백테스트 시작일 이전 구간 절단 (종료일은 최신까지)
     backtest_start = pd.to_datetime(DEFAULT_BACKTEST_START_DATE)
@@ -184,7 +183,7 @@ it is a preliminary signal computed from the latest intra-month prices.</p>
 
 <h2>Monthly Holdings</h2>
 <p class="meta">Portfolio formed from each month-end signal and held for the following
-month. Each date is the start of that holding month.</p>
+month. Each date is the rebalance date (month-end signal + implementation lag).</p>
 {heatmap_html}
 
 <h2>Statistics</h2>
