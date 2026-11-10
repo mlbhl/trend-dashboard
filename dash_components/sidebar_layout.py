@@ -468,7 +468,7 @@ def _portfolio_section():
                     style={"cursor": "pointer", "fontSize": "0.8rem"},
                 ),
                 dbc.Tooltip(
-                    "Select all available tickers at each rebalancing. This option is only meaningful with Rank weighting, where the signal determines portfolio weights.",
+                    "Hold every ticker that has a signal at each rebalancing. With Equal weighting this is the same as the Equal Weight benchmark; Inverse Vol and Rank weighting still differ from it.",
                     target="help-select-all",
                     placement="right",
                 ),
@@ -503,7 +503,7 @@ def _portfolio_section():
             className="mb-2",
         ),
         label_with_help("Weighting Method", "help-weight-method", 
-                        "Portfolio weighting scheme. Equal assigns 1/N weights, Inverse Vol weights assets by the inverse of volatility, and Rank weights assets by the inverse of rank."),
+                        "Portfolio weighting scheme. Equal assigns 1/N weights, Inverse Vol weights assets by the inverse of volatility, and Rank weights the K holdings linearly by rank (best gets K, worst gets 1)."),
         dcc.Dropdown(
             id="weight-method-select",
             options=[{"label": k, "value": v} for k, v in WEIGHT_METHODS.items()],
@@ -560,7 +560,7 @@ def _benchmark_section():
                     style={"cursor": "pointer", "fontSize": "0.8rem"},
                 ),
                 dbc.Tooltip(
-                    "Equal Weight assigns equal weights across all selected tickers. Custom BM builds a composite benchmark from multiple tickers with custom weights.",
+                    "Equal Weight assigns equal weights to every ticker that has a signal that month (the strategy's own candidates; in Core-Satellite mode the core is blended in too). Custom BM builds a composite benchmark from multiple tickers with custom weights.",
                     target="help-bm-type",
                     placement="right",
                 ),
@@ -799,8 +799,9 @@ def _walk_forward_section():
                     min=1,
                     step=1,
                     size="sm",
-                    className="mb-2",
+                    className="mb-1",
                 ),
+                html.Div(id="wf-test-warning", className="mb-1"),
                 label_with_help("Samples per Fold", "help-wf-samples", "Number of random parameter combinations to test per fold (100 to 3,696).", size="sm"),
                 dbc.Input(
                     id="wf-samples-input",

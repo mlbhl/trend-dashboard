@@ -4,7 +4,7 @@ import pandas as pd
 import pytest
 
 import src.analysis as analysis
-from src.analysis import AnalysisError, run_analysis
+from src.analysis import AnalysisError, check_whole_number, parse_core_config, run_analysis
 from src.metrics import format_stats, summary_stats
 from src.optimizer import optimize_sharpe
 from src.portfolio import (
@@ -137,6 +137,41 @@ def test_optimizer_best_sharpe_is_what_the_dashboard_shows(market):
 
     shown = summary_stats(res.navs).loc["sharpe", "Combined (Core 70% / Satellite 30%)"]
     assert shown == pytest.approx(opt["best_sharpe"], rel=1e-9)
+
+
+# ---------------------------------------------------------------- input validation
+
+@pytest.mark.parametrize("value, problem", [
+    (None, "Test period: enter a whole number of at least 1."), ("", "Test period: enter a whole number of at least 1."),
+    (0, "Test period must be at least 1."),
+    (2.5, "Test period must be a whole number."), ("x", "Test period must be a number."), (12, None), (12.0, None),
+])
+def test_check_whole_number(value, problem):
+    assert check_whole_number(value, 1, "Test period") == problem
+
+
+def test_parse_core_config():
+    cfg = parse_core_config([{"ticker": " spy ", "weight": 60}, {"ticker": "AGG", "weight": 0}, {"ticker": "", "weight": 5}], 70)
+    assert cfg == {"tickers": ["SPY"], "weights": [60.0], "ratio": 0.7}
+    for pct in (0, 100, None, ""):
+        with pytest.raises(AnalysisError, match="between 1 and 99"):
+            parse_core_config([{"ticker": "SPY", "weight": 100}], pct)
+    with pytest.raises(AnalysisError, match="requires core tickers"):
+        parse_core_config([{"ticker": "SPY", "weight": 0}], 70)
+
+
+def test_core_allocation_zero_is_an_error_not_70(market):
+    core = [{"ticker": "SPY", "weight": 100}]
+    with pytest.raises(AnalysisError, match="between 1 and 99"):
+        run_analysis(UNIVERSE, strategy_mode="core-satellite", core_weight_pct=0, core_config=core, thresh=9)
+    # quantile mode drops the core, so its settings are not validated there
+    assert run_analysis(UNIVERSE, strategy_type="Quantile", strategy_mode="core-satellite", core_weight_pct=0,
+                        core_config=core, thresh=9).warnings
+
+
+def test_fewer_tickers_than_min_valid_tickers_is_an_error(market):
+    with pytest.raises(AnalysisError, match="fewer than Min Valid Tickers"):
+        run_analysis(UNIVERSE[:5] + ["NOPE"], thresh=9)
 
 
 # ---------------------------------------------------------------- shared display helpers

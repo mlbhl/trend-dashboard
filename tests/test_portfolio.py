@@ -5,13 +5,17 @@ import pytest
 from pandas.tseries.offsets import BDay, BMonthBegin
 
 from src import config
+from src.charts import create_holding_heatmap
 from src.portfolio import (
     backtest,
     blend_core_satellite,
     compute_weight_quantile,
     compute_weight_top_k,
+    holding_months,
+    rebalance_dates,
     run_quantile_backtest,
     run_top_k_backtest,
+    to_rebalance_dates,
 )
 from src.signals import calc_vol, generate_signal
 
@@ -203,6 +207,26 @@ def test_no_hardcoded_rebalance_offsets_outside_helper():
             if pattern.search(line) and not (f.name == "portfolio.py" and "BDay(lag)" in line):
                 offenders.append(f"{f.relative_to(root)}:{n}: {line.strip()}")
     assert not offenders, "use portfolio.to_rebalance_dates()/rebalance_dates():\n" + "\n".join(offenders)
+
+
+@pytest.mark.parametrize("lag", [0, 1, 2, 5])
+def test_holding_month_is_the_month_after_the_signal(lag):
+    """Lag 0 buys at the signal-day close, lag 1+ early next month: either way the portfolio is
+    held through the month after the signal."""
+    signals = pd.date_range("2024-01-01", periods=24, freq="BME")
+    months = holding_months(rebalance_dates(signals, lag), lag)
+    assert list(months) == [s + pd.offsets.MonthBegin(1) for s in signals]
+
+
+def test_holdings_heatmap_labels_do_not_depend_on_lag(prices, monkeypatch):
+    sig = generate_signal(prices)
+    labels = {}
+    for lag in (0, 1, 2):
+        monkeypatch.setattr(config, "IMPLEMENTATION_LAG", lag)
+        w = to_rebalance_dates(compute_weight_top_k(prices, sig, top_k=5)[0])
+        labels[lag] = list(create_holding_heatmap(w.iloc[-6:]).layout.xaxis.ticktext)
+    assert labels[0] == labels[1] == labels[2]
+    assert labels[1][-1] == (sig.index[-1] + pd.offsets.MonthBegin(1)).strftime("%y.%m")
 
 
 def test_lag_changes_results(prices, monkeypatch):

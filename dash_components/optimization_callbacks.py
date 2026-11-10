@@ -9,11 +9,38 @@ import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 
-from src.config import DEFAULT_CORE_WEIGHT_PCT
 from src.data import load_price_data
 from src.metrics import sharpe_from_nav
 from src.optimizer import optimize_sharpe, walk_forward_optimize
-from src.analysis import build_composite_bm
+from src.analysis import (
+    AnalysisError,
+    build_composite_bm,
+    check_whole_number,
+    parse_core_config,
+    with_core_prices,
+)
+
+
+def _enough_tickers(tickers, thresh) -> bool:
+    return len(tickers or []) >= (thresh or 0)
+
+
+def _wf_input_problems(train_months, test_months, samples) -> tuple:
+    return (
+        check_whole_number(train_months, 12, "Train period (months)"),
+        check_whole_number(test_months, 1, "Test period (months)"),
+        check_whole_number(samples, 100, "Samples per fold"),
+    )
+
+
+def _input_alert(problem: str | None):
+    if not problem:
+        return None
+    return dbc.Alert(f"⚠️ {problem}", color="danger", className="py-1 px-2 mb-0", style={"fontSize": "0.75rem"})
+
+
+def _error_alert(err) -> dbc.Alert:
+    return dbc.Alert([html.I(className="fas fa-times-circle me-2"), str(err)], color="danger")
 
 
 def register(app):
@@ -34,25 +61,13 @@ def register(app):
         Output("optimize-btn", "disabled"),
         Input("opt-samples-input", "value"),
         Input("opt-mode-radio", "value"),
+        Input("ticker-store", "data"),
+        Input("thresh-slider", "value"),
     )
-    def validate_opt_samples(samples, opt_mode):
-        """Validate optimization samples and disable button if invalid."""
-        # Full grid mode doesn't need samples validation
-        if opt_mode == "full":
-            return None, False
-
-        if samples is None:
-            return None, False
-
-        if samples < 100:
-            return dbc.Alert(
-                "⚠️ Samples < 100 is too low. Minimum 100 required.",
-                color="danger",
-                className="py-1 px-2 mb-0",
-                style={"fontSize": "0.75rem"},
-            ), True
-
-        return None, False
+    def validate_opt_inputs(samples, opt_mode, tickers, thresh):
+        """Only writer of optimize-btn.disabled: sample count (random mode) and ticker count."""
+        problem = check_whole_number(samples, 100, "Samples") if opt_mode == "random" else None
+        return _input_alert(problem), bool(problem) or not _enough_tickers(tickers, thresh)
 
     @app.callback(
         Output("optimized-params-store", "data"),
@@ -102,20 +117,16 @@ def register(app):
         if not n_clicks or not selected_tickers or len(selected_tickers) < 2:
             raise PreventUpdate
 
-        if strategy_mode == "core-satellite" and not core_config:
-            return None, dbc.Alert(
-                [html.I(className="fas fa-times-circle me-2"),
-                 "Core-Satellite mode requires core tickers. Please configure and Apply core settings."],
-                color="danger",
-            ), ""
-
-        # Validate samples
-        if opt_mode == "random" and n_samples:
-            n_samples = int(n_samples)
-            if n_samples < 100:
-                return None, dbc.Alert("Samples must be at least 100.", color="danger"), ""
-        else:
-            n_samples = None
+        # Validate inputs (the button is disabled for these already; this guards stale states)
+        problem = check_whole_number(n_samples, 100, "Samples") if opt_mode == "random" else None
+        try:
+            if problem:
+                raise AnalysisError(problem)
+            opt_core_config = (parse_core_config(core_config, core_weight_pct)
+                               if strategy_mode == "core-satellite" else None)
+        except AnalysisError as err:
+            return None, _error_alert(err), ""
+        n_samples = int(n_samples) if opt_mode == "random" else None
 
         # Load data
         dataset, _ = load_price_data(selected_tickers, start_date=start_date)
@@ -131,23 +142,9 @@ def register(app):
         except (ValueError, TypeError):
             opt_seed = None
 
-        # Build core_config for optimizer
-        opt_core_config = None
-        if strategy_mode == "core-satellite" and core_config:
-            core_tickers = [r["ticker"].strip().upper() for r in core_config if r.get("ticker")]
-            core_weights = [float(r.get("weight", 0)) for r in core_config if r.get("ticker")]
-            if core_tickers:
-                # Load extra core ticker data
-                extra = [t for t in core_tickers if t not in dataset.columns]
-                if extra:
-                    dataset, _ = load_price_data(
-                        list(dataset.columns) + extra, start_date=start_date
-                    )
-                opt_core_config = {
-                    "tickers": core_tickers,
-                    "weights": core_weights,
-                    "ratio": (core_weight_pct or DEFAULT_CORE_WEIGHT_PCT) / 100.0,
-                }
+        # Core-only tickers get prices too (they never enter the signal: see universe=)
+        if opt_core_config:
+            dataset, _ = with_core_prices(dataset, opt_core_config["tickers"], start_date)
 
         # Progress callback
         def update_progress(current, total):
@@ -221,38 +218,20 @@ def register(app):
 
     @app.callback(
         Output("wf-train-warning", "children"),
+        Output("wf-test-warning", "children"),
         Output("wf-samples-warning", "children"),
         Output("walk-forward-btn", "disabled"),
         Input("wf-train-input", "value"),
+        Input("wf-test-input", "value"),
         Input("wf-samples-input", "value"),
+        Input("ticker-store", "data"),
+        Input("thresh-slider", "value"),
     )
-    def validate_wf_inputs(train_months, samples):
-        """Validate walk-forward inputs and disable button if invalid."""
-        train_warning = None
-        samples_warning = None
-        disabled = False
-
-        # Validate train period
-        if train_months is not None and train_months < 12:
-            train_warning = dbc.Alert(
-                "⚠️ Train period must be at least 12 months.",
-                color="danger",
-                className="py-1 px-2 mb-0",
-                style={"fontSize": "0.75rem"},
-            )
-            disabled = True
-
-        # Validate samples
-        if samples is not None and samples < 100:
-            samples_warning = dbc.Alert(
-                "⚠️ Samples < 100 is too low. Minimum 100 required.",
-                color="danger",
-                className="py-1 px-2 mb-0",
-                style={"fontSize": "0.75rem"},
-            )
-            disabled = True
-
-        return train_warning, samples_warning, disabled
+    def validate_wf_inputs(train_months, test_months, samples, tickers, thresh):
+        """Only writer of walk-forward-btn.disabled: train / test / samples and ticker count."""
+        problems = _wf_input_problems(train_months, test_months, samples)
+        disabled = any(problems) or not _enough_tickers(tickers, thresh)
+        return (*(_input_alert(p) for p in problems), disabled)
 
     @app.callback(
         Output("wf-settings-collapse", "is_open"),
@@ -377,22 +356,16 @@ def register(app):
         if not n_clicks or not selected_tickers or len(selected_tickers) < 2:
             raise PreventUpdate
 
-        if strategy_mode == "core-satellite" and not core_config:
-            return (None, dbc.Alert(
-                [html.I(className="fas fa-times-circle me-2"),
-                 "Core-Satellite mode requires core tickers. Please configure and Apply core settings."],
-                color="danger",
-            ), "") + empty_results
-
-        # Validate train period
-        train_months = int(train_months) if train_months else 36
-        if train_months < 12:
-            return (None, dbc.Alert("Train period must be at least 12 months.", color="danger"), "") + empty_results
-
-        # Validate samples
-        wf_samples = int(wf_samples) if wf_samples else 500
-        if wf_samples < 100:
-            return (None, dbc.Alert("Samples must be at least 100.", color="danger"), "") + empty_results
+        # Validate inputs (the button is disabled for these already; this guards stale states)
+        problems = [p for p in _wf_input_problems(train_months, test_months, wf_samples) if p]
+        try:
+            if problems:
+                raise AnalysisError(problems[0])
+            wf_core_config = (parse_core_config(core_config, core_weight_pct)
+                              if strategy_mode == "core-satellite" else None)
+        except AnalysisError as err:
+            return (None, _error_alert(err), "") + empty_results
+        train_months, test_months, wf_samples = int(train_months), int(test_months), int(wf_samples)
 
         # Load data
         dataset, _ = load_price_data(selected_tickers, start_date=start_date)
@@ -417,22 +390,9 @@ def register(app):
         except (ValueError, TypeError):
             wf_seed = None
 
-        # Build core_config for walk-forward
-        wf_core_config = None
-        if strategy_mode == "core-satellite" and core_config:
-            core_tickers = [r["ticker"].strip().upper() for r in core_config if r.get("ticker")]
-            core_weights = [float(r.get("weight", 0)) for r in core_config if r.get("ticker")]
-            if core_tickers:
-                extra = [t for t in core_tickers if t not in dataset.columns]
-                if extra:
-                    dataset, _ = load_price_data(
-                        list(dataset.columns) + extra, start_date=start_date
-                    )
-                wf_core_config = {
-                    "tickers": core_tickers,
-                    "weights": core_weights,
-                    "ratio": (core_weight_pct or DEFAULT_CORE_WEIGHT_PCT) / 100.0,
-                }
+        # Core-only tickers get prices too (they never enter the signal: see universe=)
+        if wf_core_config:
+            dataset, _ = with_core_prices(dataset, wf_core_config["tickers"], start_date)
 
         # Progress callback
         def update_progress(fold, total_folds, step, total_steps):
@@ -447,11 +407,11 @@ def register(app):
         # Run walk-forward
         wf_result = walk_forward_optimize(
             price=dataset,
-            train_months=int(train_months),
-            test_months=int(test_months),
+            train_months=train_months,
+            test_months=test_months,
             # step = test 강제: OOS 구간이 공백·중복 없이 이어져 결합 OOS 곡선이
             # 주기적 재최적화 운용 시뮬레이션과 일치한다
-            step_months=int(test_months),
+            step_months=test_months,
             window_type=window_type,
             top_k=top_k,
             weight_method=weight_method,

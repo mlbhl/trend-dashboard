@@ -19,6 +19,18 @@ def rebalance_dates(signal_dates, lag: int | None = None) -> pd.DatetimeIndex:
     return pd.DatetimeIndex(signal_dates) + BDay(lag)
 
 
+def holding_months(dates, lag: int | None = None) -> pd.DatetimeIndex:
+    """First day of the month each rebalance's portfolio is held through: the month after its
+    month-end signal, whatever the lag (lag 0 buys at the signal-day close, still held next month).
+
+    Inverse of rebalance_dates(); used to label holdings charts.
+    """
+    if lag is None:
+        lag = config.IMPLEMENTATION_LAG
+    signal_dates = pd.DatetimeIndex(dates) - BDay(lag)
+    return signal_dates.to_period("M").to_timestamp() + pd.offsets.MonthBegin(1)
+
+
 def to_rebalance_dates(weights: pd.DataFrame, lag: int | None = None) -> pd.DataFrame:
     """Copy of signal-date (month-end) weights, re-indexed to their rebalance dates."""
     shifted = weights.copy()

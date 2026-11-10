@@ -69,7 +69,7 @@ img {{ display: block; margin: 8px 0; }}
 </style>
 </head>
 <body>
-<h1>Theme Momentum Dashboard — Daily Report</h1>
+<h1>Trend Rotation Strategy Dashboard — Report</h1>
 <p class="meta">Generated: {generated_at}</p>
 <p class="meta">{period_info}</p>
 {warning_html}
@@ -101,8 +101,7 @@ it is a preliminary signal computed from the latest intra-month prices.</p>
 <div class="table-scroll">{monthly_html}</div>
 
 <h2>Monthly Holdings</h2>
-<p class="meta">Portfolio formed from each month-end signal and held for the following
-month. Each date is the rebalance date (month-end signal + implementation lag).</p>
+<p class="meta">Each column is a holding month: the portfolio picked from the previous month-end signal and held through that month.</p>
 {heatmap_html}
 
 <h2>Statistics</h2>

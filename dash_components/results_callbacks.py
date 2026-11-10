@@ -33,6 +33,36 @@ from src.charts import (
 )
 
 
+def _read_frame(data: str) -> pd.DataFrame:
+    """DataFrame back from dcc.Store JSON, with a sorted DatetimeIndex."""
+    frame = pd.read_json(StringIO(data))
+    frame.index = pd.to_datetime(frame.index)
+    return frame.sort_index()
+
+
+def _holdings_heatmap(weights_data: dict, params: dict, signal: pd.DataFrame | None, use_name: bool) -> go.Figure:
+    """Holdings over the last 24 rebalances: all quantiles colour-coded, or the single Top-K portfolio."""
+    if params["strategy_type"] == "Quantile":
+        q_wgts = {q: _read_frame(w).iloc[-24:] for q, w in weights_data.items()}
+        n_tickers = len(set().union(*(w.columns for w in q_wgts.values())))
+        return create_quantile_holding_heatmap(
+            q_wgts,
+            title="Monthly Holdings by Quantile",
+            height=max(500, n_tickers * 25),
+            ticker_descriptions=TICKER_DESCRIPTIONS,
+            use_name=use_name,
+            signal=signal,
+        )
+    recent = _read_frame(next(iter(weights_data.values()))).iloc[-24:]  # Top-K: one portfolio
+    return create_holding_heatmap(
+        recent,
+        title="Monthly Holdings",
+        height=max(500, len(recent.columns) * 25),
+        ticker_descriptions=TICKER_DESCRIPTIONS,
+        use_name=use_name,
+    )
+
+
 def register(app):
     """Register results callbacks."""
 
@@ -182,9 +212,6 @@ def register(app):
         Output("annual-returns-chart", "figure"),
         Output("monthly-returns-select", "options"),
         Output("monthly-returns-select", "value"),
-        Output("heatmap-quantile-select", "options"),
-        Output("heatmap-quantile-select", "value"),
-        Output("quantile-selector-div", "style"),
         Output("heatmap-chart", "figure"),
         Output("stats-table-chart", "figure"),
         Output("stats-df-container", "children"),
@@ -192,20 +219,17 @@ def register(app):
         State("params-store", "data"),
         State("signal-store", "data"),
         State("weights-store", "data"),
+        State("heatmap-label-toggle", "value"),
     )
-    def update_charts(navs_json, params, signal_json, weights_data):
+    def update_charts(navs_json, params, signal_json, weights_data, label_mode):
         """Update all charts when NAV data changes."""
         if not navs_json or not params:
             raise PreventUpdate
 
         # Parse data
-        navs = pd.read_json(StringIO(navs_json))
-        navs.index = pd.to_datetime(navs.index)
-        navs = navs.sort_index()
+        navs = _read_frame(navs_json)
 
-        signal = pd.read_json(StringIO(signal_json))
-        signal.index = pd.to_datetime(signal.index)
-        signal = signal.sort_index()
+        signal = _read_frame(signal_json)
 
         # Rebase NAVs
         navs_rebased = rebase(navs)
@@ -274,57 +298,9 @@ def register(app):
             spread_style = {"display": "none"}
             fig_spread = go.Figure()
 
-        # Heatmap quantile selector
-        if params["strategy_type"] == "Quantile":
-            n_q = params["n_quantiles"]
-            quantile_options = [
-                {"label": f"Q{q}", "value": f"Q{q}"} for q in range(n_q, 0, -1)
-            ]
-            default_quantile = f"Q{n_q}"
-            quantile_selector_style = {"display": "none"}
-        else:
-            strat_name = "All" if params["top_k"] is None else f"Top-{params['top_k']}"
-            quantile_options = [{"label": strat_name, "value": strat_name}]
-            default_quantile = strat_name
-            quantile_selector_style = {"display": "none"}
-
         # Heatmap
-        if params["strategy_type"] == "Quantile":
-            # Combined quantile heatmap with all quantiles color-coded
-            q_wgts = {}
-            for q_name, wgt_json in weights_data.items():
-                wgt = pd.read_json(StringIO(wgt_json))
-                wgt.index = pd.to_datetime(wgt.index)
-                wgt = wgt.sort_index()
-                q_wgts[q_name] = wgt.iloc[-24:]
-            all_tickers = set()
-            for wgt in q_wgts.values():
-                all_tickers.update(wgt.columns)
-            n_tickers = len(all_tickers)
-            chart_height = max(500, n_tickers * 25)
-            fig_heatmap = create_quantile_holding_heatmap(
-                q_wgts,
-                title="Monthly Holdings by Quantile",
-                height=chart_height,
-                ticker_descriptions=TICKER_DESCRIPTIONS,
-                signal=signal,
-            )
-        else:
-            wgt_json = weights_data.get(default_quantile)
-            if wgt_json:
-                wgt = pd.read_json(StringIO(wgt_json))
-                wgt.index = pd.to_datetime(wgt.index)
-                wgt = wgt.sort_index()
-                recent_wgt = wgt.iloc[-24:]
-                n_tickers = len(recent_wgt.columns)
-                chart_height = max(500, n_tickers * 25)
-                fig_heatmap = create_holding_heatmap(
-                    recent_wgt,
-                    title="Monthly Holdings",
-                    height=chart_height,
-                )
-            else:
-                fig_heatmap = go.Figure()
+        fig_heatmap = (_holdings_heatmap(weights_data, params, signal, label_mode == "name")
+                       if weights_data else go.Figure())
 
         # Stats Table
         stats = summary_stats(navs)
@@ -353,9 +329,6 @@ def register(app):
             fig_annual,
             monthly_options,
             monthly_default,
-            quantile_options,
-            default_quantile,
-            quantile_selector_style,
             fig_heatmap,
             fig_stats,
             stats_df_table,
@@ -363,114 +336,18 @@ def register(app):
 
     @app.callback(
         Output("heatmap-chart", "figure", allow_duplicate=True),
-        Output("quantile-info-div", "children"),
-        Input("heatmap-quantile-select", "value"),
-        State("weights-store", "data"),
-        State("params-store", "data"),
-        State("heatmap-label-toggle", "value"),
-        prevent_initial_call=True,
-    )
-    def update_heatmap_quantile(selected_quantile, weights_data, params, label_mode):
-        """Update heatmap when quantile selection changes."""
-        if not selected_quantile or not weights_data or not params:
-            raise PreventUpdate
-
-        # In Quantile mode, combined heatmap is shown; skip individual update
-        if params.get("strategy_type") == "Quantile":
-            raise PreventUpdate
-
-        wgt_json = weights_data.get(selected_quantile)
-        if not wgt_json:
-            raise PreventUpdate
-
-        wgt = pd.read_json(StringIO(wgt_json))
-        wgt.index = pd.to_datetime(wgt.index)
-        wgt = wgt.sort_index()
-        recent_wgt = wgt.iloc[-24:]
-        n_tickers = len(recent_wgt.columns)
-        chart_height = max(500, n_tickers * 25)
-
-        fig_heatmap = create_holding_heatmap(
-            recent_wgt,
-            title=f"Monthly Holdings - {selected_quantile}",
-            height=chart_height,
-            ticker_descriptions=TICKER_DESCRIPTIONS,
-            use_name=label_mode == "name",
-        )
-
-        # Quantile info
-        if params["strategy_type"] == "Quantile":
-            n_q = params["n_quantiles"]
-            if selected_quantile == f"Q{n_q}":
-                desc = "Best performers (lowest ranks)"
-            elif selected_quantile == "Q1":
-                desc = "Worst performers (highest ranks)"
-            else:
-                desc = "Middle performers"
-            info = dbc.Alert(f"{selected_quantile}: {desc}", color="info", className="mb-0 py-2")
-        else:
-            info = None
-
-        return fig_heatmap, info
-
-    @app.callback(
-        Output("heatmap-chart", "figure", allow_duplicate=True),
         Input("heatmap-label-toggle", "value"),
         State("weights-store", "data"),
         State("params-store", "data"),
         State("signal-store", "data"),
-        State("heatmap-quantile-select", "value"),
         prevent_initial_call=True,
     )
-    def update_heatmap_label(label_mode, weights_data, params, signal_json, selected_quantile):
+    def update_heatmap_label(label_mode, weights_data, params, signal_json):
         """Toggle y-axis labels between ticker and name."""
         if not weights_data or not params:
             raise PreventUpdate
-
-        use_name = label_mode == "name"
-
-        if params["strategy_type"] == "Quantile":
-            q_wgts = {}
-            for q_name, wgt_json in weights_data.items():
-                wgt = pd.read_json(StringIO(wgt_json))
-                wgt.index = pd.to_datetime(wgt.index)
-                wgt = wgt.sort_index()
-                q_wgts[q_name] = wgt.iloc[-24:]
-            sig = None
-            if signal_json:
-                sig = pd.read_json(StringIO(signal_json))
-                sig.index = pd.to_datetime(sig.index)
-                sig = sig.sort_index()
-            all_tickers = set()
-            for wgt in q_wgts.values():
-                all_tickers.update(wgt.columns)
-            n_tickers = len(all_tickers)
-            chart_height = max(500, n_tickers * 25)
-            return create_quantile_holding_heatmap(
-                q_wgts,
-                title="Monthly Holdings by Quantile",
-                height=chart_height,
-                ticker_descriptions=TICKER_DESCRIPTIONS,
-                use_name=use_name,
-                signal=sig,
-            )
-        else:
-            wgt_json = weights_data.get(selected_quantile)
-            if not wgt_json:
-                raise PreventUpdate
-            wgt = pd.read_json(StringIO(wgt_json))
-            wgt.index = pd.to_datetime(wgt.index)
-            wgt = wgt.sort_index()
-            recent_wgt = wgt.iloc[-24:]
-            n_tickers = len(recent_wgt.columns)
-            chart_height = max(500, n_tickers * 25)
-            return create_holding_heatmap(
-                recent_wgt,
-                title="Monthly Holdings",
-                height=chart_height,
-                ticker_descriptions=TICKER_DESCRIPTIONS,
-                use_name=use_name,
-            )
+        signal = _read_frame(signal_json) if signal_json else None
+        return _holdings_heatmap(weights_data, params, signal, label_mode == "name")
 
     @app.callback(
         Output("monthly-returns-chart", "figure"),
@@ -483,9 +360,7 @@ def register(app):
         if not selected_col or not navs_json:
             raise PreventUpdate
 
-        navs = pd.read_json(StringIO(navs_json))
-        navs.index = pd.to_datetime(navs.index)
-        navs = navs.sort_index()
+        navs = _read_frame(navs_json)
 
         if selected_col not in navs.columns:
             raise PreventUpdate
@@ -538,10 +413,8 @@ def register(app):
         if not n_clicks or not navs_json:
             raise PreventUpdate
         from io import BytesIO
-        navs = pd.read_json(StringIO(navs_json))
-        navs.index = pd.to_datetime(navs.index)
-        navs = navs.sort_index()
-        navs_rebased = navs / navs.iloc[0] * 100
+        navs = _read_frame(navs_json)
+        navs_rebased = rebase(navs)
         buf = BytesIO()
         navs_rebased.to_excel(buf, index=True, sheet_name="NAV")
         buf.seek(0)
@@ -558,10 +431,8 @@ def register(app):
         if not n_clicks or not navs_json:
             raise PreventUpdate
         from io import BytesIO
-        navs = pd.read_json(StringIO(navs_json))
-        navs.index = pd.to_datetime(navs.index)
-        navs = navs.sort_index()
-        navs_rebased = navs / navs.iloc[0] * 100
+        navs = _read_frame(navs_json)
+        navs_rebased = rebase(navs)
         cummax = navs_rebased.cummax()
         drawdown = (navs_rebased - cummax) / cummax
         buf = BytesIO()
@@ -580,9 +451,7 @@ def register(app):
         if not n_clicks or not navs_json:
             raise PreventUpdate
         from io import BytesIO
-        navs = pd.read_json(StringIO(navs_json))
-        navs.index = pd.to_datetime(navs.index)
-        navs = navs.sort_index()
+        navs = _read_frame(navs_json)
         ann_rets = annual_returns(navs)
         buf = BytesIO()
         ann_rets.to_excel(buf, index=True, sheet_name="Annual Returns")
@@ -601,9 +470,7 @@ def register(app):
         if not n_clicks or not navs_json or not selected_col:
             raise PreventUpdate
         from io import BytesIO
-        navs = pd.read_json(StringIO(navs_json))
-        navs.index = pd.to_datetime(navs.index)
-        navs = navs.sort_index()
+        navs = _read_frame(navs_json)
         if selected_col not in navs.columns:
             raise PreventUpdate
         m_rets = monthly_returns(navs[selected_col])
@@ -618,11 +485,10 @@ def register(app):
         Output("download-holdings", "data"),
         Input("dl-holdings-btn", "n_clicks"),
         State("weights-store", "data"),
-        State("heatmap-quantile-select", "value"),
         State("params-store", "data"),
         prevent_initial_call=True,
     )
-    def download_holdings(n_clicks, weights_data, selected_quantile, params):
+    def download_holdings(n_clicks, weights_data, params):
         """Download holdings/weights data as Excel."""
         if not n_clicks or not weights_data:
             raise PreventUpdate
@@ -631,19 +497,10 @@ def register(app):
         if params and params.get("strategy_type") == "Quantile":
             with pd.ExcelWriter(buf) as writer:
                 for q_name in sorted(weights_data.keys(), key=lambda x: int(x[1:])):
-                    wgt = pd.read_json(StringIO(weights_data[q_name]))
-                    wgt.index = pd.to_datetime(wgt.index)
-                    wgt = wgt.sort_index()
+                    wgt = _read_frame(weights_data[q_name])
                     wgt.to_excel(writer, index=True, sheet_name=q_name)
         else:
-            if not selected_quantile:
-                raise PreventUpdate
-            wgt_json = weights_data.get(selected_quantile)
-            if not wgt_json:
-                raise PreventUpdate
-            wgt = pd.read_json(StringIO(wgt_json))
-            wgt.index = pd.to_datetime(wgt.index)
-            wgt = wgt.sort_index()
+            wgt = _read_frame(next(iter(weights_data.values())))  # Top-K stores exactly one portfolio
             wgt.to_excel(buf, index=True, sheet_name="Holdings")
         buf.seek(0)
         return dcc.send_bytes(buf.getvalue(), "holdings_data.xlsx")

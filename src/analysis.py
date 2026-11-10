@@ -59,6 +59,56 @@ class AnalysisResult:
     warnings: list[str] = field(default_factory=list)
 
 
+def check_whole_number(value, minimum: int, label: str) -> str | None:
+    """Problem with a numeric sidebar input, or None when it is a whole number >= minimum.
+
+    Blank is a problem too: inputs are never silently replaced by a default. Number inputs also
+    report a value outside their min/max as blank, so the message covers both cases.
+    """
+    if value is None or value == "":
+        return f"{label}: enter a whole number of at least {minimum}."
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return f"{label} must be a number."
+    if number != int(number):
+        return f"{label} must be a whole number."
+    if number < minimum:
+        return f"{label} must be at least {minimum}."
+    return None
+
+
+def parse_core_config(core_config: list | None, core_weight_pct) -> dict:
+    """Validated core-satellite settings: {"tickers", "weights", "ratio"}.
+
+    Rows without a ticker or with a non-positive weight are ignored. Raises AnalysisError when no
+    core ticker is left or the core allocation is not between 1 and 99 %.
+    """
+    tickers, weights = [], []
+    for row in core_config or []:
+        ticker = (row.get("ticker") or "").strip().upper()
+        weight = float(row.get("weight") or 0)
+        if ticker and weight > 0:
+            tickers.append(ticker)
+            weights.append(weight)
+    if not tickers:
+        raise AnalysisError(
+            "Core-Satellite mode requires core tickers. Please configure and Apply core settings."
+        )
+    if core_weight_pct is None or core_weight_pct == "" or not 1 <= float(core_weight_pct) <= 99:
+        raise AnalysisError("Core allocation must be between 1 and 99%.")
+    return {"tickers": tickers, "weights": weights, "ratio": float(core_weight_pct) / 100.0}
+
+
+def with_core_prices(dataset: pd.DataFrame, core_tickers: list[str], start_date: str) -> tuple:
+    """(prices of the selected universe + core tickers outside it, core tickers without data)."""
+    extra = [t for t in core_tickers if t not in dataset.columns]
+    if not extra:
+        return dataset, []
+    expanded, missing = load_price_data(list(dataset.columns) + extra, start_date=start_date)
+    return expanded, [t for t in missing if t in core_tickers]
+
+
 def build_composite_bm(bm_config: list, start_date: str) -> tuple:
     """Build a composite benchmark from multiple tickers with weights.
 
@@ -155,11 +205,8 @@ def run_analysis(
         strategy_mode = "single"
         notices.append("Core-Satellite applies to Top-K only. Quantile results exclude the core.")
 
-    # Validate core-satellite config
-    if strategy_mode == "core-satellite" and not core_config:
-        raise AnalysisError(
-            "Core-Satellite mode requires core tickers. Please configure and Apply core settings."
-        )
+    # Validate core-satellite settings (raises with a user-facing message)
+    core = parse_core_config(core_config, core_weight_pct) if strategy_mode == "core-satellite" else None
 
     # Calculate weights
     if weight_mode == "equal":
@@ -185,6 +232,11 @@ def run_analysis(
         if missing:
             error_msg += f" Missing: {', '.join(missing)}"
         raise AnalysisError(error_msg)
+    if len(dataset.columns) < thresh:
+        raise AnalysisError(
+            f"Only {len(dataset.columns)} tickers have price data, fewer than Min Valid Tickers ({thresh}). "
+            "Add tickers or lower the threshold."
+        )
 
     # Collect warnings
     warnings = list(notices)
@@ -214,44 +266,25 @@ def run_analysis(
         long_wgt=long_wgt,
         thresh=thresh,
     )
+    if signal.empty:
+        raise AnalysisError(
+            "Not enough price history for the selected lookback windows and Min Valid Tickers."
+        )
 
-    # Parse core-satellite config
-    is_core_satellite = strategy_mode == "core-satellite"
-    core_ratio = (core_weight_pct or DEFAULT_CORE_WEIGHT_PCT) / 100.0 if is_core_satellite else 0.0
-
-    # Parse core tickers/weights from applied config
-    core_tickers_parsed = []
-    core_weights_parsed = []
-    if is_core_satellite and core_config:
-        for row in core_config:
-            ticker = row.get("ticker", "").strip().upper()
-            weight = float(row.get("weight", 0))
-            if ticker and weight > 0:
-                core_tickers_parsed.append(ticker)
-                core_weights_parsed.append(weight)
-
-    # Load core ticker data if needed (tickers not in selected universe)
+    # Core-satellite: core weights come from parse_core_config(); core-only tickers get prices too
+    is_core_satellite = core is not None
+    core_ratio = core["ratio"] if core else 0.0
+    core_tickers_parsed = core["tickers"] if core else []
+    core_weights_parsed = core["weights"] if core else []
     dataset_expanded = dataset
-    if is_core_satellite and core_tickers_parsed:
-        extra_tickers = [t for t in core_tickers_parsed if t not in dataset.columns]
-        if extra_tickers:
-            dataset_expanded, extra_missing = load_price_data(
-                list(dataset.columns) + extra_tickers, start_date=start_date
-            )
-            missing_core = [t for t in extra_missing if t in core_tickers_parsed]
-            if missing_core:
-                warnings.append(f"Core ticker(s) not found: {', '.join(missing_core)}")
+    if core:
+        dataset_expanded, missing_core = with_core_prices(dataset, core_tickers_parsed, start_date)
+        if missing_core:
+            warnings.append(f"Core ticker(s) not found: {', '.join(missing_core)}")
 
     # Run backtest
     strat_name = ""
     if strategy_type == "Top-K":
-        strat_nav, universe_bm_nav, _ = run_top_k_backtest(
-            dataset,
-            signal,
-            top_k=top_k,
-            weight_method=weight_method,
-            tcost=tcost,
-        )
         strat_name = "All" if top_k is None else f"Top-{top_k}"
 
         # Satellite weights (also shown in the holdings heatmap)
@@ -263,7 +296,6 @@ def run_analysis(
                 dataset_expanded, signal, core_tickers_parsed, core_weights_parsed
             )
             sat_wgt_expanded = sat_wgt.reindex(columns=dataset_expanded.columns, fill_value=0.0)
-            core_wgt_aligned = core_wgt.reindex(columns=dataset_expanded.columns, fill_value=0.0)
 
             # Blend weights (same function the optimizer uses)
             combined_wgt = blend_core_satellite(
@@ -272,7 +304,7 @@ def run_analysis(
 
             # Signal-date weights -> rebalance dates (config.IMPLEMENTATION_LAG)
             combined_nav, _ = backtest(dataset_expanded, to_rebalance_dates(combined_wgt), tcost=tcost)
-            core_nav_only, _ = backtest(dataset_expanded, to_rebalance_dates(core_wgt_aligned), tcost=tcost)
+            core_nav_only, _ = backtest(dataset_expanded, to_rebalance_dates(core_wgt), tcost=tcost)
             sat_nav_only, _ = backtest(dataset_expanded, to_rebalance_dates(sat_wgt_expanded), tcost=tcost)
 
             # Build NAV DataFrame with detailed core label
@@ -288,6 +320,13 @@ def run_analysis(
                 f"Satellite ({strat_name})": sat_nav_only,
             })
         else:
+            strat_nav, universe_bm_nav, _ = run_top_k_backtest(
+                dataset,
+                signal,
+                top_k=top_k,
+                weight_method=weight_method,
+                tcost=tcost,
+            )
             navs = pd.DataFrame({strat_name: strat_nav})
         weights = {strat_name: to_rebalance_dates(sat_wgt)}
     else:

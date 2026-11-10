@@ -15,13 +15,16 @@ import io
 
 import matplotlib
 
-matplotlib.use("Agg")  # 헤드리스 백엔드 (cron/서버에서 디스플레이 불필요)
+matplotlib.use("Agg")  # 헤드리스 백엔드 (디스플레이 없이 PNG만 렌더)
 
 import matplotlib.colors as mcolors
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mtick
 import numpy as np
 import pandas as pd
+
+from src.charts import signal_quantile_columns  # generate_report puts the project root on sys.path
+from src.portfolio import holding_months
 
 # Plotly qualitative Set2 팔레트를 hex로 복제 (대시보드와 외형 근접)
 SET2 = [
@@ -112,7 +115,7 @@ def holding_heatmap_img(weight: pd.DataFrame, title: str = "Monthly Holdings") -
     weight_t = w.T  # 행: 티커(유니버스 전체), 열: 월
 
     tickers = list(weight_t.index)
-    x_dates = pd.to_datetime(weight_t.columns)
+    x_dates = holding_months(weight_t.columns)  # rebalance dates -> the month each portfolio is held
     z = weight_t.values
 
     fig_h = max(5.0, len(tickers) * 0.28)
@@ -125,7 +128,7 @@ def holding_heatmap_img(weight: pd.DataFrame, title: str = "Monthly Holdings") -
     ax.set_xticklabels(
         [d.strftime("%y.%m") for d in x_dates], rotation=45, ha="right", fontsize=8
     )
-    ax.set_xlabel("Month")
+    ax.set_xlabel("Holding Month")
     ax.set_ylabel("Ticker")
     if title:
         ax.set_title(title)
@@ -136,45 +139,10 @@ def signal_category_html(
     signal: pd.Series, n_quantiles: int = 5
 ) -> str:
     """현재 시그널을 분위(Q5=최고 ~ Q1=최저)별로 묶은 HTML 테이블.
-
-    src.charts.create_signal_category_table의 그룹화/색상 로직을 그대로 옮겨 렌더만 HTML로.
+    분위 배정·색상은 대시보드와 같은 src.charts.signal_quantile_columns를 쓰고, 렌더만 HTML로 한다.
     """
-    signal = signal.dropna()
-
-    # 분위 배정: 최고 시그널 -> Q5, 최저 -> Q1 (동점은 평균 백분위 + 고정 빈으로 유지)
-    pct = signal.rank(pct=True)
-    bins = np.linspace(0, 1, n_quantiles + 1)
-    quantile_labels = pd.cut(
-        pct,
-        bins=bins,
-        labels=[f"Q{i}" for i in range(n_quantiles, 0, -1)],
-        include_lowest=True,
-    )
-
-    quantile_data = {}
-    for q in range(n_quantiles, 0, -1):
-        q_label = f"Q{q}"
-        tickers_in_q = quantile_labels[quantile_labels == q_label].index.tolist()
-        tickers_sorted = signal.loc[tickers_in_q].sort_values()
-        quantile_data[q_label] = [
-            f"{t} ({int(signal[t])})" for t in tickers_sorted.index
-        ]
-
-    max_len = max((len(v) for v in quantile_data.values()), default=0)
-    for q in quantile_data:
-        while len(quantile_data[q]) < max_len:
-            quantile_data[q].append("")
-
-    headers = [f"Q{q}" for q in range(n_quantiles, 0, -1)]
-
-    # 헤더 색상: Q5(최고)=초록, Q1(최저)=빨강
-    header_colors = []
-    for q in range(n_quantiles, 0, -1):
-        ratio = (q - 1) / (n_quantiles - 1) if n_quantiles > 1 else 1.0
-        r = int(255 * (1 - ratio))
-        g = int(200 * ratio)
-        header_colors.append(f"rgb({r}, {g}, 100)")
-
+    headers, quantile_data, header_colors = signal_quantile_columns(signal, n_quantiles)
+    max_len = len(quantile_data[headers[0]]) if headers else 0
     ths = "".join(
         f'<th style="background:{c};color:white;">{h}</th>'
         for h, c in zip(headers, header_colors)

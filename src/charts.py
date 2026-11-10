@@ -5,7 +5,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 
 from .metrics import format_stats
-from .portfolio import rebalance_dates
+from .portfolio import holding_months, rebalance_dates
 
 
 def create_nav_chart(
@@ -110,64 +110,6 @@ def create_drawdown_chart(
     return fig
 
 
-def create_allocation_chart(
-    weight: pd.DataFrame,
-    title: str = "Portfolio Allocation",
-    height: int = 400,
-) -> go.Figure:
-    """
-    Create stacked area chart for portfolio allocation.
-
-    Args:
-        weight: Portfolio weights DataFrame
-        title: Chart title
-        height: Chart height in pixels
-
-    Returns:
-        Plotly Figure
-    """
-    # Filter to non-zero columns
-    active_cols = weight.columns[weight.sum() > 0]
-    weight_active = weight[active_cols]
-
-    fig = go.Figure()
-
-    colors = px.colors.qualitative.Set3
-
-    for i, col in enumerate(weight_active.columns):
-        fig.add_trace(go.Scatter(
-            x=weight_active.index,
-            y=weight_active[col],
-            mode='lines',
-            name=col,
-            stackgroup='one',
-            line=dict(width=0),
-            fillcolor=colors[i % len(colors)],
-        ))
-
-    fig.update_layout(
-        title=title,
-        xaxis_title="Date",
-        yaxis_title="Weight",
-        height=height,
-        autosize=True,
-        hovermode='x unified',
-        dragmode=False,
-        xaxis=dict(fixedrange=True),
-        yaxis=dict(fixedrange=True),
-        legend=dict(
-            orientation="h",
-            yanchor="bottom",
-            y=1.02,
-            xanchor="right",
-            x=1
-        ),
-        margin=dict(l=40, r=20, t=40, b=40),
-    )
-
-    return fig
-
-
 def create_holding_heatmap(
     weight: pd.DataFrame,
     title: str = "Monthly Holdings",
@@ -195,7 +137,7 @@ def create_holding_heatmap(
     w = w.sort_index()
 
     weight_t = w.T
-    x_dates = pd.to_datetime(weight_t.columns)
+    x_dates = holding_months(weight_t.columns)  # columns are rebalance dates; show the month held
 
     tickvals = x_dates
     ticktext = [d.strftime("%y.%m") for d in tickvals]
@@ -217,13 +159,13 @@ def create_holding_heatmap(
         colorscale='Blues',
         xgap=0.1,
         ygap=0.1,
-        hovertemplate='Ticker: %{customdata[0]}<br>Name: %{customdata[1]}<br>Date: %{x|%y.%m}<br>Weight: %{z:.2%}<extra></extra>',
+        hovertemplate='Ticker: %{customdata[0]}<br>Name: %{customdata[1]}<br>Holding month: %{x|%y.%m}<br>Weight: %{z:.2%}<extra></extra>',
         showscale=False,
     ))
 
     fig.update_layout(
         title=title,
-        xaxis_title="Month",
+        xaxis_title="Holding Month",
         yaxis_title="Name" if use_name else "Ticker",
         height=height,
         autosize=True,
@@ -337,7 +279,7 @@ def create_quantile_holding_heatmap(
         quantile_matrix[held] = q_num
         weight_matrix[held] = wgt_t[held]
 
-    x_dates = dates
+    x_dates = holding_months(dates)  # dates are rebalance dates; show the month held
     tickvals = x_dates
     ticktext = [d.strftime("%y.%m") for d in tickvals]
 
@@ -369,14 +311,14 @@ def create_quantile_holding_heatmap(
     for i, ticker in enumerate(all_tickers):
         name = desc.get(ticker, ticker)
         row = []
-        for j, dt in enumerate(dates):
+        for j, dt in enumerate(x_dates):
             q_val = q_matrix_vals[i, j]
             w_val = w_matrix_vals[i, j]
             if np.isnan(q_val):
                 row.append("")
             else:
                 row.append(
-                    f"{ticker} ({name})<br>Date: {dt.strftime('%y.%m')}"
+                    f"{ticker} ({name})<br>Holding month: {dt.strftime('%y.%m')}"
                     f"<br>Q{int(q_val)}<br>Weight: {w_val:.2%}"
                 )
         hover_text.append(row)
@@ -411,7 +353,7 @@ def create_quantile_holding_heatmap(
 
     fig.update_layout(
         title=dict(text=title_with_legend, font=dict(size=16)),
-        xaxis_title="Month",
+        xaxis_title="Holding Month",
         yaxis_title="",
         height=height,
         autosize=True,
@@ -440,6 +382,41 @@ def create_quantile_holding_heatmap(
     return fig
 
 
+def signal_quantile_columns(signal: pd.Series, n_quantiles: int = 5) -> tuple[list, dict, list]:
+    """Tickers grouped by signal quantile, best first (Q5 = best ... Q1 = worst).
+
+    Ties stay together (average percentile rank + fixed bins). Returns (headers, columns padded to
+    equal length with "Ticker (rank)" cells, header colours from green to red). Shared by the
+    dashboard table and the report.
+    """
+    import numpy as np
+
+    signal = signal.dropna()
+    pct = signal.rank(pct=True)
+    bins = np.linspace(0, 1, n_quantiles + 1)
+    quantile_labels = pd.cut(
+        pct,
+        bins=bins,
+        labels=[f"Q{i}" for i in range(n_quantiles, 0, -1)],
+        include_lowest=True,
+    )
+
+    headers = [f"Q{q}" for q in range(n_quantiles, 0, -1)]
+    columns = {}
+    for q_label in headers:
+        tickers_sorted = signal.loc[quantile_labels[quantile_labels == q_label].index].sort_values()
+        columns[q_label] = [f"{t} ({int(signal[t])})" for t in tickers_sorted.index]
+    max_len = max((len(v) for v in columns.values()), default=0)
+    for q_label in headers:
+        columns[q_label] += [""] * (max_len - len(columns[q_label]))
+
+    header_colors = []
+    for q in range(n_quantiles, 0, -1):
+        ratio = (q - 1) / (n_quantiles - 1) if n_quantiles > 1 else 1.0  # 1 for Q5, 0 for Q1
+        header_colors.append(f"rgb({int(255 * (1 - ratio))}, {int(200 * ratio)}, 100)")
+    return headers, columns, header_colors
+
+
 def create_signal_category_table(
     signal: pd.Series,
     n_quantiles: int = 5,
@@ -457,51 +434,9 @@ def create_signal_category_table(
     Returns:
         Plotly Figure
     """
-    import numpy as np
-
-    signal = signal.dropna()
-
-    # Assign quantiles: best signal -> Q5, worst -> Q1
-    # Ties are kept together via percentile rank (average) + fixed-bin pd.cut
-    pct = signal.rank(pct=True)
-    bins = np.linspace(0, 1, n_quantiles + 1)
-    quantile_labels = pd.cut(
-        pct,
-        bins=bins,
-        labels=[f"Q{i}" for i in range(n_quantiles, 0, -1)],
-        include_lowest=True,
-    )
-
-    # Group tickers by quantile
-    quantile_data = {}
-    for q in range(n_quantiles, 0, -1):
-        q_label = f"Q{q}"
-        tickers_in_q = quantile_labels[quantile_labels == q_label].index.tolist()
-        # Sort by rank within quantile
-        tickers_sorted = signal.loc[tickers_in_q].sort_values()
-        quantile_data[q_label] = [
-            f"{t} ({int(signal[t])})" for t in tickers_sorted.index
-        ]
-
-    # Find max length for padding
-    max_len = max(len(v) for v in quantile_data.values())
-
-    # Pad shorter lists with empty strings
-    for q in quantile_data:
-        while len(quantile_data[q]) < max_len:
-            quantile_data[q].append("")
-
-    # Create columns in order Q5 -> Q1 (best to worst)
-    headers = [f"Q{q}" for q in range(n_quantiles, 0, -1)]
-    cell_values = [quantile_data[h] for h in headers]
-
-    # Color headers: Q5 (best) is green, Q1 (worst) is red
-    header_colors = []
-    for i, q in enumerate(range(n_quantiles, 0, -1)):
-        ratio = (q - 1) / (n_quantiles - 1)  # 1 for Q5, 0 for Q1
-        r = int(255 * (1 - ratio))
-        g = int(200 * ratio)
-        header_colors.append(f'rgb({r}, {g}, 100)')
+    headers, columns, header_colors = signal_quantile_columns(signal, n_quantiles)
+    cell_values = [columns[h] for h in headers]
+    max_len = len(cell_values[0]) if cell_values else 0
 
     fig = go.Figure(data=[go.Table(
         header=dict(

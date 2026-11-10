@@ -97,7 +97,7 @@ def create_instructions():
                                 html.Li(
                                     [
                                         html.Strong("Equal Weight: "),
-                                        "equal-weight basket of all selected tickers.",
+                                        "equal-weight basket of the tickers that have a signal each month (the strategy's candidates).",
                                     ]
                                 ),
                                 html.Li(
@@ -190,7 +190,7 @@ def quick_reference_section():
                         html.H6("Benchmark"),
                         html.Ul(
                             [
-                                html.Li("Equal Weight: equal-weight basket of selected tickers."),
+                                html.Li("Equal Weight: equal-weight basket of the tickers with a signal each month."),
                                 html.Li("Custom BM: composite from multiple tickers with custom weights."),
                             ]
                         ),
@@ -330,7 +330,7 @@ def _signal_section():
 
 
 def _holdings_section():
-    """Holdings heatmap with quantile / label selectors."""
+    """Holdings heatmap with the ticker / name label toggle."""
     return [
         html.Div(className="mb-4"),
         html.H4("Holdings Analysis", className="mb-3"),
@@ -339,35 +339,8 @@ def _holdings_section():
             className="text-muted d-block mb-2",
         ),
         html.Small(
-            "Portfolio formed from each month-end signal and held for the following month. Each date is the start of that holding month.",
+            "Each column is a holding month: the portfolio picked from the previous month-end signal and held through that month.",
             className="text-muted d-block mb-2",
-        ),
-        html.Div(
-            id="quantile-selector-div",
-            children=[
-                dbc.Row(
-                    [
-                        dbc.Col(
-                            [
-                                dbc.Label("Select Quantile"),
-                                dcc.Dropdown(
-                                    id="heatmap-quantile-select",
-                                    options=[],
-                                    value=None,
-                                    clearable=False,
-                                ),
-                            ],
-                            width=3,
-                        ),
-                        dbc.Col(
-                            html.Div(id="quantile-info-div"),
-                            width=9,
-                            className="d-flex align-items-end",
-                        ),
-                    ],
-                    className="mb-3",
-                ),
-            ],
         ),
         dbc.Row(
             [

@@ -5,7 +5,7 @@ from dash import Input, Output, State, html, ALL
 from dash.exceptions import PreventUpdate
 import dash_bootstrap_components as dbc
 
-from src.config import TICKER_PRESETS, DEFAULT_PRESET
+from src.config import TICKER_PRESETS, DEFAULT_PRESET, DEFAULT_CORE_WEIGHT_PCT
 from dash_components.sidebar_layout import _create_bm_row, _create_core_row
 
 
@@ -53,9 +53,10 @@ def register(app):
     def toggle_core_satellite(mode, core_pct):
         """Show/hide core-satellite settings and update satellite label."""
         if mode == "core-satellite":
-            sat_pct = 100 - (core_pct or 70)
-            return {"display": "block"}, f"Satellite: {sat_pct}%"
-        return {"display": "none"}, "Satellite: 30%"
+            if core_pct is None or not 1 <= core_pct <= 99:
+                return {"display": "block"}, html.Span("Core allocation must be 1–99%", className="text-danger")
+            return {"display": "block"}, f"Satellite: {100 - core_pct:g}%"
+        return {"display": "none"}, f"Satellite: {100 - DEFAULT_CORE_WEIGHT_PCT}%"
 
     @app.callback(
         Output("core-rows-container", "children"),
@@ -320,8 +321,6 @@ def register(app):
     @app.callback(
         Output("ticker-thresh-warning", "children"),
         Output("run-analysis-btn", "disabled", allow_duplicate=True),
-        Output("optimize-btn", "disabled", allow_duplicate=True),
-        Output("walk-forward-btn", "disabled", allow_duplicate=True),
         Input("ticker-store", "data"),
         Input("thresh-slider", "value"),
         prevent_initial_call=True,
@@ -339,5 +338,5 @@ def register(app):
                 color="warning",
                 className="py-2 mb-0",
             )
-            return warning, True, True, True
-        return None, False, False, False
+            return warning, True  # Optimize / Walk-forward buttons check the ticker count themselves
+        return None, False

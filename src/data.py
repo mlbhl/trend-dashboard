@@ -7,29 +7,20 @@ import yfinance as yf
 def load_price_data(
     tickers: list[str],
     start_date: str = '2000-01-01',
-    end_date: str | None = None,
-    proxy: str | None = None,
 ) -> tuple[pd.DataFrame, list[str]]:
     """
-    Load price data from Yahoo Finance.
+    Load price data from Yahoo Finance, up to the latest close.
 
     Args:
         tickers: List of ticker symbols
         start_date: Start date for data download
-        end_date: End date (None for latest available)
-        proxy: Proxy URL (e.g., 'http://proxy.example.com:8080')
 
     Returns:
         Tuple of (DataFrame with adjusted close prices, list of missing tickers)
     """
-    # Set proxy if provided
-    if proxy:
-        yf.set_config(proxy=proxy)
-
     data = yf.download(
         tickers,
         start=start_date,
-        end=end_date,
         auto_adjust=True,
         progress=False,
     )

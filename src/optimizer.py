@@ -102,10 +102,10 @@ def _strategy_weights(
     top_k: int | None,
     weight_method: str,
     core_config: dict | None,
-) -> tuple[pd.DataFrame, pd.DataFrame]:
+) -> pd.DataFrame:
     """Dashboard top-k weights (+ core blend), moved to their rebalance dates."""
     wgt, _ = compute_weight_top_k(price, signal, top_k=top_k, weight_method=weight_method, vol=vol)
-    return to_rebalance_dates(_with_core(wgt, price, core_config)), price
+    return to_rebalance_dates(_with_core(wgt, price, core_config))
 
 
 def _period_nav(
@@ -161,7 +161,7 @@ def _strategy_nav(
     core_config: dict | None = None,
 ) -> pd.Series | None:
     """Strategy NAV for a period, using the same weight and backtest code as the dashboard."""
-    wgt, price = _strategy_weights(price, signal, vol, top_k, weight_method, core_config)
+    wgt = _strategy_weights(price, signal, vol, top_k, weight_method, core_config)
     return _period_nav(price, wgt, tcost, start_date, end_date)
 
 
@@ -310,91 +310,20 @@ def optimize_sharpe(
     momentums = precompute_momentums(sat_price)
     vol = calc_vol(sat_price).resample('BME').last()
 
-    # Generate all combinations
-    lookback_combos = generate_lookback_combinations()
-    weight_combos = generate_weight_combinations(step=10)
-
-    # Create all parameter combinations
-    all_combos = [
-        (lb, wt) for lb in lookback_combos for wt in weight_combos
-    ]
-    total_possible = len(all_combos)
-
-    # Random sampling if requested
-    if n_samples is not None and n_samples < total_possible:
-        if seed is not None:
-            random.seed(seed)
-        all_combos = random.sample(all_combos, n_samples)
-
-    total = len(all_combos)
-
-    best_sharpe = -np.inf
-    best_params = None
-    results = []
-
-    for current, (lb, wt) in enumerate(all_combos, 1):
-        short, mid, long = lb
-        short_wgt, mid_wgt, long_wgt = wt
-
-        # Generate signal using precomputed momentums
-        signal = combine_signals(
-            momentums, short, mid, long,
-            short_wgt, mid_wgt, long_wgt,
-            thresh=thresh
-        )
-
-        if len(signal) == 0:
-            if progress_callback:
-                progress_callback(current, total)
-            continue
-
-        # Run fast backtest
-        sharpe = _strategy_sharpe(
-            price, signal, vol,
-            top_k=top_k,
-            weight_method=weight_method,
-            tcost=tcost,
-            start_date=start_date,
-            core_config=core_config,
-        )
-
-        if np.isnan(sharpe):
-            if progress_callback:
-                progress_callback(current, total)
-            continue
-
-        results.append({
-            'short_window': short,
-            'mid_window': mid,
-            'long_window': long,
-            'short_wgt': short_wgt,
-            'mid_wgt': mid_wgt,
-            'long_wgt': long_wgt,
-            'sharpe': sharpe,
-        })
-
-        if sharpe > best_sharpe:
-            best_sharpe = sharpe
-            best_params = {
-                'short_window': short,
-                'mid_window': mid,
-                'long_window': long,
-                'short_wgt': short_wgt,
-                'mid_wgt': mid_wgt,
-                'long_wgt': long_wgt,
-            }
-
-        if progress_callback:
-            progress_callback(current, total)
-
-    return {
-        'best_params': best_params,
-        'best_sharpe': best_sharpe,
-        'total_combinations': total,
-        'total_possible': total_possible,
-        'valid_combinations': len(results),
-        'all_results': results,
-    }
+    return optimize_sharpe_period(
+        price=price,
+        momentums=momentums,
+        vol=vol,
+        top_k=top_k,
+        weight_method=weight_method,
+        tcost=tcost,
+        start_date=start_date,
+        thresh=thresh,
+        n_samples=n_samples,
+        seed=seed,
+        progress_callback=progress_callback,
+        core_config=core_config,
+    )
 
 
 def walk_forward_optimize(
@@ -434,7 +363,8 @@ def walk_forward_optimize(
         thresh: Minimum valid tickers
         n_samples: Number of random samples per fold
         seed: Random seed
-        bm_ticker: Custom benchmark ticker name (None for equal weight)
+        bm_ticker: Custom benchmark label; when set, bm_data (a price series) is the OOS benchmark
+                   instead of the equal-weight one
         bm_data: Custom benchmark price data (required if bm_ticker is set)
         progress_callback: Optional callback(fold, total_folds, step_in_fold, total_steps)
         universe: Tickers the strategy may select (satellite universe). Defaults to all price
@@ -539,7 +469,7 @@ def walk_forward_optimize(
             bp['short_wgt'], bp['mid_wgt'], bp['long_wgt'],
             thresh=thresh
         )
-        wgt, _ = _strategy_weights(price, signal, vol, top_k, weight_method, core_config)
+        wgt = _strategy_weights(price, signal, vol, top_k, weight_method, core_config)
         bm_wgt = _benchmark_weights(price, signal, core_config)
         in_window = (wgt.index >= fold['test_start']) & (wgt.index < fold['test_end'])
         strat_parts.append(wgt[in_window])
