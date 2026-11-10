@@ -32,7 +32,7 @@ app.layout = create_layout()
 # Register callbacks
 register_callbacks(app)
 
-# Expose server for gunicorn
+# WSGI server object (for a production server such as gunicorn, not installed by default)
 server = app.server
 
 if __name__ == "__main__":

@@ -9,9 +9,12 @@ Trend Dashboard is a Python Dash application for analyzing momentum-based rotati
 ## Running the Application
 
 ```bash
-gunicorn app:server
+pip install -r requirements.txt
+python app.py
 ```
-Runs on port 8000 by default.
+Opens at http://localhost:8050 (Dash debug server, local use only). `app.server` is kept for a WSGI server, but gunicorn is not in `requirements.txt` (no deployment).
+
+`requirements.txt` caps major versions at the tested ones (pandas 2, dash 3, plotly 6, dbc 2; yfinance pinned). numpy stays < 2.5: numpy 2.5 deprecates generic timedelta units, which pandas 2 still uses internally (hundreds of DeprecationWarnings). Moving to pandas 3 / dash 4 is a separate upgrade: run the tests and the dashboard UI before lifting a cap.
 
 ## Architecture
 
@@ -40,7 +43,7 @@ Price Data (Yahoo Finance) → Signal Generation → Portfolio Weights → Backt
 - `optimization_callbacks.py` - Optimize and walk-forward
 
 **Entry Point:**
-- `app.py` - Dash app, uses gunicorn for production
+- `app.py` - Dash app (`python app.py`); background callbacks use diskcache in `./cache`
 
 **Manual Report (`scripts/`):**
 - `generate_report.py` - Calls `src.analysis.run_analysis()` with the sidebar defaults and renders `reports/report_<date>.html` (run manually: `python scripts/generate_report.py`; `reports/` is gitignored, no cron/auto-commit)
