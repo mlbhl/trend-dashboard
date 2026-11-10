@@ -14,7 +14,7 @@ python app.py
 ```
 Opens at http://localhost:8050 (Dash debug server, local use only). `app.server` is kept for a WSGI server, but gunicorn is not in `requirements.txt` (no deployment).
 
-`requirements.txt` caps major versions at the tested ones (pandas 2, dash 3, plotly 6, dbc 2; yfinance pinned). numpy stays < 2.5: numpy 2.5 deprecates generic timedelta units, which pandas 2 still uses internally (hundreds of DeprecationWarnings). Moving to pandas 3 / dash 4 is a separate upgrade: run the tests and the dashboard UI before lifting a cap.
+`requirements.txt` keeps every package within the tested major versions, floors included (pandas 2, numpy 2, dash 3, plotly 6, dbc 2, openpyxl 3; yfinance pinned): e.g. dash 2.x bundles a plotly.js too old for plotly 6 charts. `diskcache` is listed because `app.py` imports it directly. numpy stays < 2.5: numpy 2.5 deprecates generic timedelta units, which pandas 2 still uses internally (hundreds of DeprecationWarnings). Moving to pandas 3 / dash 4 is a separate upgrade: run the tests and the dashboard UI before lifting a cap.
 
 ## Architecture
 
@@ -31,10 +31,10 @@ Price Data (Yahoo Finance) → Signal Generation → Portfolio Weights → Backt
 - `portfolio.py` - `compute_weight_top_k()`, `compute_weight_quantile()`, and `backtest()` engine
 - `metrics.py` - `summary_stats()` for CAGR, Sharpe, MDD; `calculate_kpis()` for dashboard display; `format_stats()` / `kpi_lines()` display strings shared by dashboard and report; KPI YTD/MTD start from the previous year-/month-end close (same base as `annual_returns()` / `monthly_returns()`)
 - `charts.py` - Plotly visualizations: NAV, drawdown, heatmaps, signal tables (`signal_quantile_columns()` is shared with the report)
-- `optimizer.py` - `optimize_sharpe()` grid search for optimal lookback windows and weights
+- `optimizer.py` - `optimize_sharpe()` grid search for optimal lookback windows and weights; `walk_forward_optimize()`
 
 **Dash Components (`dash_components/`):** split by screen area; `*_layout.py` = what is shown, `*_callbacks.py` = behaviour
-- `layout.py` - `create_layout()`: stores, downloads, sidebar + results area
+- `layout.py` - `create_layout()`: stores, downloads, sidebar + results area. `app.layout = create_layout` (the function): Dash rebuilds it on each page load, so date defaults are today's
 - `sidebar_layout.py` - sidebar, one function per section (`_signal_section()`, `_benchmark_section()`, ...); also help labels and the core/BM row builders (reused by `sidebar_callbacks.py`)
 - `results_layout.py` - results area, one function per section (`_holdings_section()`, ...) + user-guide texts
 - `callbacks.py` - `register_callbacks()` wires the three modules below
@@ -43,7 +43,7 @@ Price Data (Yahoo Finance) → Signal Generation → Portfolio Weights → Backt
 - `optimization_callbacks.py` - Optimize and walk-forward
 
 **Entry Point:**
-- `app.py` - Dash app (`python app.py`); background callbacks use diskcache in `./cache`
+- `app.py` - Dash app (`python app.py`); background callbacks use diskcache in `cache/` next to `app.py`
 
 **Manual Report (`scripts/`):**
 - `generate_report.py` - Calls `src.analysis.run_analysis()` with the sidebar defaults and renders `reports/report_<date>.html` (run manually: `python scripts/generate_report.py`; `reports/` is gitignored, no cron/auto-commit)
@@ -65,11 +65,13 @@ Price Data (Yahoo Finance) → Signal Generation → Portfolio Weights → Backt
 
 **Annualisation:** prices are resampled to every weekday (holidays forward-filled), so annualise only with `config.PERIODS_PER_YEAR` (261) — `metrics.summary_stats()` / `metrics.sharpe_from_nav()`. Never hard-code 252.
 
-**Walk-forward:** fold edges are snapped to rebalance dates (`_holding_month_start()`), and the out-of-sample curve is ONE continuous backtest of the folds' weights concatenated (a fold switch is a normal rebalance with turnover cost) — never chain per-fold NAVs.
+**Walk-forward:** fold edges are snapped to rebalance dates (`_holding_month_start()`), folds step forward by the test period (no separate step: test windows are back to back), and the out-of-sample curve is ONE continuous backtest of the folds' weights concatenated (a fold switch is a normal rebalance with turnover cost) — never chain per-fold NAVs. Training windows are scored from their first rebalance (`_first_rebalance_on_or_after()`). Walk-forward uses all downloaded data (not the Backtest Start / End Dates), and its results section sits outside the Run Analysis results.
 
-**Backtest rules live only in `portfolio.py`** (`compute_weight_top_k()`, `backtest()`). `optimizer.py` calls them via `_strategy_nav()` / `_benchmark_nav()` — never re-implement the weight or NAV loop there.
+**Backtest rules live only in `portfolio.py`** (`compute_weight_top_k()`, `backtest()`). `optimizer.py` calls them via `_strategy_weights()` / `_benchmark_weights()` + `_period_nav()` — never re-implement the weight or NAV loop there. A window's NAV (`_period_nav()`) is what Run Analysis shows for it: positions held on the start date come from the rebalance before it, and nothing after the end date is used. So the Optimize Sharpe equals the dashboard Sharpe for Backtest Start → End Date.
 
-**Sidebar inputs:** never swap a blank or invalid value for a default. Validate with `analysis.check_whole_number()` / `analysis.parse_core_config()` (raise `AnalysisError` or show a warning), and give each button's `disabled` exactly ONE writer callback that checks all of its conditions (ticker count + inputs); otherwise callbacks overwrite each other.
+**Empty positions:** an all-zero weight row is cash (`backtest()` handles it); a pick with zero / missing volatility gets weight 0 under inverse-vol, never NaN. In Quantile mode `run_analysis()` refuses more quantiles than tickers with a signal in the shown months (some bucket would be empty).
+
+**Sidebar inputs:** never swap a blank or invalid value for a default. Validate with `analysis.check_whole_number()` / `check_tcost()` / `check_backtest_dates()` / `parse_seed()` / `parse_core_config()` (raise `AnalysisError` or show a warning). Button-specific inputs (samples, train / test months) disable their button; shared sidebar inputs (cost, dates, core) show an inline hint and are refused when a button is clicked. Give each button's `disabled` exactly ONE writer callback that checks all of its conditions (ticker count + inputs; Run Analysis also reads the `run-analysis-busy` store that its `running=` sets) — `tests/test_app.py` checks this.
 
 **Adding Dash callbacks:** Add inside `register(app)` of the matching `dash_components/*_callbacks.py`; new UI goes into the matching section function in `sidebar_layout.py` / `results_layout.py`. Keep `.py` file names unique across the project (no second `analysis.py` etc.)
 
@@ -87,4 +89,5 @@ python -m pytest
 - Network-free (synthetic prices), ~20s. pytest is a dev tool and is not in `requirements.txt`.
 - `pytest.ini` turns `FutureWarning` into errors so pandas deprecations fail fast.
 - `tests/test_optimizer_consistency.py` checks the optimizer scores parameters exactly like the dashboard: momentum cache (`combine_signals`) == `generate_signal`, and train/test windows == `portfolio.backtest` run on that window with full-history volatility.
+- `tests/test_app.py` checks the Dash wiring: one writer per button `disabled`, every store is read, the layout is a function, functions named in this file exist.
 - `tests/test_golden.py` snapshots end-to-end numbers in `tests/golden/core_outputs.json`. After an *intentional* math change: `UPDATE_GOLDEN=1 python -m pytest tests/test_golden.py`, then review the JSON diff before committing.

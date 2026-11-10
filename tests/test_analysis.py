@@ -4,7 +4,15 @@ import pandas as pd
 import pytest
 
 import src.analysis as analysis
-from src.analysis import AnalysisError, check_whole_number, parse_core_config, run_analysis
+from src.analysis import (
+    AnalysisError,
+    check_backtest_dates,
+    check_tcost,
+    check_whole_number,
+    parse_core_config,
+    parse_seed,
+    run_analysis,
+)
 from src.metrics import format_stats, summary_stats
 from src.optimizer import optimize_sharpe
 from src.portfolio import (
@@ -70,6 +78,22 @@ def test_quantile_mode(market):
     assert set(res.weights) == {"Q1", "Q2", "Q3", "Q4"}
 
 
+def test_more_quantiles_than_tickers_with_a_signal_is_an_error(market):
+    """8 tickers cannot fill 10 quantiles: some would hold nothing, every month."""
+    with pytest.raises(AnalysisError, match="Number of Quantiles"):
+        run_analysis(UNIVERSE[:8], strategy_type="Quantile", n_quantiles=10, thresh=5)
+    assert run_analysis(UNIVERSE[:8], strategy_type="Quantile", n_quantiles=8, thresh=5).navs.notna().all().all()
+
+
+def test_empty_quantiles_before_the_backtest_start_do_not_spoil_the_results(market):
+    """Before the 3 late tickers get a signal only 9 tickers rank, so Q10 is empty (cash) in
+    those months. From 2018 all 12 rank: the shown results must be complete, not NaN."""
+    res = run_analysis(UNIVERSE, strategy_type="Quantile", n_quantiles=10, thresh=9,
+                       backtest_start_date="2018-01-01")
+    assert res.navs.notna().all().all()
+    assert len(summary_stats(res.navs).columns) == 11 and summary_stats(res.navs).loc["nsamples"].min() > 400
+
+
 def test_quantile_mode_ignores_core_satellite(market):
     """Core-Satellite is Top-K only: quantile buckets and their benchmark stay core-free."""
     core = [{"ticker": "SPY", "weight": 60}, {"ticker": "AGG", "weight": 40}]
@@ -122,15 +146,20 @@ def test_errors_and_warnings(market):
     assert res.params["bm_col_name"] == "BM (Equal Weight)"
 
 
-def test_optimizer_best_sharpe_is_what_the_dashboard_shows(market):
+@pytest.mark.parametrize("start, end", [
+    ("2016-06-01", None),          # starts on a rebalance date
+    ("2016-06-15", None),          # mid-month: positions taken on 2016-06-01 are already held
+    ("2016-06-01", "2018-06-30"),  # Backtest End Date: data after it must not be used
+])
+def test_optimizer_best_sharpe_is_what_the_dashboard_shows(market, start, end):
     """Optimize in core-satellite mode, then Run Analysis with the result: same Sharpe."""
     core = [{"ticker": "SPY", "weight": 60}, {"ticker": "AGG", "weight": 40}]
-    start = "2016-06-01"
     opt = optimize_sharpe(market, top_k=5, weight_method="inverse_vol", tcost=0.002, start_date=start,
-                          thresh=9, n_samples=6, seed=0, universe=UNIVERSE,
+                          end_date=end, thresh=9, n_samples=6, seed=0, universe=UNIVERSE,
                           core_config={"tickers": ["SPY", "AGG"], "weights": [60, 40], "ratio": 0.7})
     p = opt["best_params"]
-    res = run_analysis(UNIVERSE, backtest_start_date=start, thresh=9, weight_method="inverse_vol", tcost_pct=0.2,
+    res = run_analysis(UNIVERSE, backtest_start_date=start, backtest_end_date=end, thresh=9,
+                       weight_method="inverse_vol", tcost_pct=0.2,
                        short_window=p["short_window"], mid_window=p["mid_window"], long_window=p["long_window"],
                        short_wgt=p["short_wgt"], mid_wgt=p["mid_wgt"], long_wgt=p["long_wgt"],
                        strategy_mode="core-satellite", core_weight_pct=70, core_config=core)
@@ -172,6 +201,72 @@ def test_core_allocation_zero_is_an_error_not_70(market):
 def test_fewer_tickers_than_min_valid_tickers_is_an_error(market):
     with pytest.raises(AnalysisError, match="fewer than Min Valid Tickers"):
         run_analysis(UNIVERSE[:5] + ["NOPE"], thresh=9)
+
+
+@pytest.mark.parametrize("value, ok", [(None, False), ("", False), (-0.1, False), (1.5, False), ("x", False),
+                                       (0, True), (0.0, True), (0.1, True), (1, True)])
+def test_check_tcost(value, ok):
+    problem = check_tcost(value)
+    assert (problem is None) == ok
+    if not ok:
+        assert problem == "Transaction cost: enter a number from 0 to 1 (%)."
+
+
+def test_blank_tcost_is_an_error_not_zero_cost(market):
+    """The number input sends None when blank or out of range: never run it as 0 % cost."""
+    with pytest.raises(AnalysisError, match="Transaction cost"):
+        run_analysis(UNIVERSE, tcost_pct=None, thresh=9)
+    assert run_analysis(UNIVERSE, tcost_pct=0, thresh=9).params["tcost"] == 0.0
+
+
+@pytest.mark.parametrize("start, end, problem", [
+    ("2018-01-01", "2017-01-01", "Backtest End Date must be after Backtest Start Date."),
+    ("2018-01-01", "2018-01-01", "Backtest End Date must be after Backtest Start Date."),
+    ("2018-01-01", None, None),
+    ("2018-01-01", "2018-02-01", None),
+])
+def test_check_backtest_dates(start, end, problem):
+    assert check_backtest_dates(start, end) == problem
+
+
+def test_end_date_before_start_is_an_error(market):
+    with pytest.raises(AnalysisError, match="Backtest End Date must be after Backtest Start Date"):
+        run_analysis(UNIVERSE, backtest_start_date="2018-01-01", backtest_end_date="2017-01-01", thresh=9)
+
+
+def test_end_date_before_the_first_result_is_an_error(market):
+    """Prices start 2015-01; the first signal needs 11 months: nothing to show up to 2015-06-30."""
+    with pytest.raises(AnalysisError, match="No results up to Backtest End Date"):
+        run_analysis(UNIVERSE, backtest_start_date="2015-01-01", backtest_end_date="2015-06-30", thresh=9)
+
+
+def test_all_zero_window_weights_is_an_error(market):
+    """All ranks would tie and the strategy would hold the first tickers in column order."""
+    with pytest.raises(AnalysisError, match="window weights"):
+        run_analysis(UNIVERSE, short_wgt=0, mid_wgt=0, long_wgt=0, thresh=9)
+
+
+def test_duplicate_core_tickers_add_up():
+    cfg = parse_core_config([{"ticker": "SPY", "weight": 50}, {"ticker": "agg", "weight": 20},
+                             {"ticker": " spy", "weight": 30}], 70)
+    assert cfg == {"tickers": ["SPY", "AGG"], "weights": [80.0, 20.0], "ratio": 0.7}
+
+
+@pytest.mark.parametrize("value, expected", [(None, None), ("", None), ("  ", None), ("7", 7), (7, 7), ("0", 0)])
+def test_parse_seed(value, expected):
+    assert parse_seed(value) == expected
+
+
+@pytest.mark.parametrize("value", ["abc", "-1", "1.5"])
+def test_parse_seed_rejects_non_whole_numbers(value):
+    with pytest.raises(AnalysisError, match="Seed"):
+        parse_seed(value)
+
+
+def test_custom_bm_without_tickers_says_so(market):
+    res = run_analysis(UNIVERSE, bm_type="custom", bm_config=[], thresh=9)
+    assert res.params["bm_col_name"] == "BM (Equal Weight)"
+    assert "Custom BM has no tickers applied. Using Equal Weight BM instead." in res.warnings
 
 
 # ---------------------------------------------------------------- shared display helpers

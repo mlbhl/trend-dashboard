@@ -592,13 +592,15 @@ def create_main_content():
                             *_signal_section(),
                             *_holdings_section(),
                             *_statistics_section(),
-                            *_walk_forward_results_section(),
-                            # Bottom spacing
-                            html.Div(style={"height": "100px"}),
                         ],
                     ),
                 ],
             ),
+
+            # Walk-forward results: independent of Run Analysis (shown after a walk-forward run)
+            *_walk_forward_results_section(),
+            # Bottom spacing
+            html.Div(style={"height": "100px"}),
         ],
         lg=9,
         xs=12,

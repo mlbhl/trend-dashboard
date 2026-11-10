@@ -5,6 +5,7 @@ from dash import Input, Output, State, html, ALL
 from dash.exceptions import PreventUpdate
 import dash_bootstrap_components as dbc
 
+from src.analysis import check_tcost
 from src.config import TICKER_PRESETS, DEFAULT_PRESET, DEFAULT_CORE_WEIGHT_PCT
 from dash_components.sidebar_layout import _create_bm_row, _create_core_row
 
@@ -57,6 +58,14 @@ def register(app):
                 return {"display": "block"}, html.Span("Core allocation must be 1–99%", className="text-danger")
             return {"display": "block"}, f"Satellite: {100 - core_pct:g}%"
         return {"display": "none"}, f"Satellite: {100 - DEFAULT_CORE_WEIGHT_PCT}%"
+
+    @app.callback(
+        Output("tcost-warning", "children"),
+        Input("tcost-input", "value"),
+    )
+    def validate_tcost(tcost):
+        """Inline hint; Run / Optimize / Walk-Forward refuse a blank or invalid cost when clicked."""
+        return check_tcost(tcost) or ""
 
     @app.callback(
         Output("core-rows-container", "children"),
@@ -320,12 +329,14 @@ def register(app):
 
     @app.callback(
         Output("ticker-thresh-warning", "children"),
-        Output("run-analysis-btn", "disabled", allow_duplicate=True),
+        Output("run-analysis-btn", "disabled"),
         Input("ticker-store", "data"),
         Input("thresh-slider", "value"),
-        prevent_initial_call=True,
+        Input("run-analysis-busy", "data"),
     )
-    def validate_ticker_count(selected_tickers, thresh):
+    def validate_run_button(selected_tickers, thresh, busy):
+        """Only writer of run-analysis-btn.disabled: ticker count, and off while a run is in progress.
+        Other inputs are checked by run_analysis() when clicked."""
         tickers = selected_tickers or []
         n = len(tickers)
         if n < thresh:
@@ -339,4 +350,4 @@ def register(app):
                 className="py-2 mb-0",
             )
             return warning, True  # Optimize / Walk-forward buttons check the ticker count themselves
-        return None, False
+        return None, bool(busy)

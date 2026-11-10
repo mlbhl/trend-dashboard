@@ -65,6 +65,31 @@ def test_inverse_vol_weighting(prices):
         assert np.allclose(risk.values, risk.iloc[0])
 
 
+def test_inverse_vol_gives_a_zero_vol_pick_weight_zero_not_nan(prices):
+    """A pick whose quote froze for the whole vol window (vol 0) is skipped: weight 0, not NaN."""
+    sig = generate_signal(prices)
+    vol = calc_vol(prices).resample("BME").last()
+    date = sig.index[30]
+    frozen = sig.loc[date][sig.loc[date] <= 3].index[0]
+    vol.loc[date, frozen] = 0.0
+
+    wgt, _ = compute_weight_top_k(prices, sig, top_k=3, weight_method="inverse_vol", vol=vol)
+    assert not wgt.isna().any().any()
+    assert wgt.loc[date, frozen] == 0.0 and wgt.loc[date].sum() == pytest.approx(1.0)
+
+
+def test_quantile_inverse_vol_gives_a_zero_vol_ticker_weight_zero_not_nan(prices):
+    p = prices.copy()
+    p.loc["2017-04-03":"2017-06-30", "T05"] = p.loc["2017-03-31", "T05"]  # quote frozen > vol window
+    sig = generate_signal(p)
+    q_wgts, _ = compute_weight_quantile(p, sig, n_quantiles=4, weight_method="inverse_vol")
+
+    for w in q_wgts.values():
+        assert not w.isna().any().any()
+    held = {q: w.loc["2017-05-31"].sum() for q, w in q_wgts.items()}
+    assert all(s == pytest.approx(1.0) for s in held.values())
+
+
 def test_blend_core_satellite(prices):
     sig = generate_signal(prices)
     sat, _ = compute_weight_top_k(prices, sig, top_k=5)
@@ -166,6 +191,21 @@ def test_switch_cost_is_turnover_times_two_tcost():
     assert turnover[d2] == pytest.approx(1.0)
     assert nav[d2] == pytest.approx(1000 * (1 - 1.0 * tcost * 2))
     assert nav.iloc[-1] == pytest.approx(nav[d2])  # flat prices: nothing else changes NAV
+
+
+def test_cash_month_then_rebalance_keeps_nav_finite(prices):
+    """An all-zero weight row is cash: NAV stays flat, then the next rebalance buys back in."""
+    idx = pd.to_datetime(["2016-02-01", "2016-03-01", "2016-04-01"])
+    w = pd.DataFrame(1 / 12, index=idx, columns=prices.columns)
+    w.loc["2016-03-01"] = 0.0
+
+    nav, turnover = backtest(prices, w, tcost=0.001)
+
+    assert nav.notna().all()
+    cash = nav["2016-03-01":"2016-03-31"]
+    assert (cash == cash.iloc[0]).all()
+    assert turnover[pd.Timestamp("2016-04-01")] == pytest.approx(0.5)  # buy back from cash
+    assert nav["2016-04-04":].nunique() > 1                             # invested again
 
 
 # ---------------------------------------------------------------- implementation lag

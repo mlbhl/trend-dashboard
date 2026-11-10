@@ -67,8 +67,6 @@ def register(app):
     """Register results callbacks."""
 
     @app.callback(
-        Output("dataset-store", "data"),
-        Output("bm-data-store", "data"),
         Output("params-store", "data"),
         Output("nav-store", "data"),
         Output("signal-store", "data"),
@@ -77,7 +75,6 @@ def register(app):
         Output("analysis-results", "style"),
         Output("analysis-loading", "style"),
         Output("analysis-warnings", "children"),
-        Output("walk-forward-results-section", "style", allow_duplicate=True),
         Input("run-analysis-btn", "n_clicks"),
         State("start-date", "date"),
         State("backtest-start-date", "date"),
@@ -105,7 +102,8 @@ def register(app):
         prevent_initial_call=True,
         background=True,
         running=[
-            (Output("run-analysis-btn", "disabled"), True, False),
+            # the button's disabled has one writer (validate_run_button), which reads this flag
+            (Output("run-analysis-busy", "data"), True, False),
             (Output("run-analysis-btn", "children"), [dbc.Spinner(size="sm", spinner_class_name="me-2"), "Running..."], [html.I(className="fas fa-play me-2"), "Run Analysis"]),
             (Output("analysis-loading", "style"), {"display": "block"}, {"display": "none"}),
         ],
@@ -168,12 +166,11 @@ def register(app):
             )
         except AnalysisError as err:
             return (
-                None, None, None, None, None, None,
+                None, None, None, None,
                 {"display": "block"},  # Show instructions
                 {"display": "none"},  # Hide results
                 {"display": "none"},  # Hide loading
                 dbc.Alert([html.I(className="fas fa-times-circle me-2"), str(err)], color="danger"),
-                {"display": "none"},  # Hide walk-forward results
             )
 
         warnings = [
@@ -186,8 +183,6 @@ def register(app):
         ]
 
         return (
-            result.dataset.to_json(date_format="iso"),
-            result.bm_data.to_json(date_format="iso") if result.bm_data is not None else None,
             result.params,
             result.navs.to_json(date_format="iso"),
             result.signal.to_json(date_format="iso"),
@@ -196,7 +191,6 @@ def register(app):
             {"display": "block"},  # Show results
             {"display": "none"},  # Hide loading
             warnings if warnings else "",  # Show warnings
-            {"display": "none"},  # Hide walk-forward results
         )
 
     @app.callback(

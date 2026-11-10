@@ -4,7 +4,15 @@ import pandas as pd
 import pytest
 
 from src.config import PERIODS_PER_YEAR
-from src.metrics import annual_returns, calculate_kpis, monthly_returns, rebase, sharpe_from_nav, summary_stats
+from src.metrics import (
+    annual_returns,
+    calculate_kpis,
+    kpi_lines,
+    monthly_returns,
+    rebase,
+    sharpe_from_nav,
+    summary_stats,
+)
 
 
 def test_summary_stats_known_path():
@@ -95,3 +103,8 @@ def test_rebase_starts_at_100():
     nav = _growth_nav("2020-01-01", "2020-06-30")
     r = rebase(nav, "2020-03-02")
     assert r.index[0] == pd.Timestamp("2020-03-02") and r.iloc[0, 0] == pytest.approx(100.0)
+
+
+def test_kpi_card_shows_mtd_next_to_ytd():
+    kpi = {"cagr": 0.1, "vol": 0.2, "sharpe": 0.5, "mdd": -0.3, "ytd": 0.04, "mtd": -0.012}
+    assert kpi_lines(kpi) == ["CAGR: 10.0%", "Vol: 20.0%", "Sharpe: 0.50", "MDD: -30.0%", "YTD: 4.0%", "MTD: -1.2%"]

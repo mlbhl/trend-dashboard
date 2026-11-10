@@ -138,7 +138,7 @@ def compute_weight_top_k(
             inv_vol = inv_vol.replace([np.inf, -np.inf], np.nan).dropna()
             if len(inv_vol) == 0:
                 continue
-            w = inv_vol / inv_vol.sum()
+            w = inv_vol / inv_vol.sum()  # a pick with zero / missing vol is skipped (weight 0)
         elif weight_method == "rank":
             # Weight by rank (best ticker gets highest rank)
             # Convert: rank 1 (best) -> len(selected), rank len(selected) (worst) -> 1
@@ -148,7 +148,7 @@ def compute_weight_top_k(
         else:  # equal
             w = pd.Series(1.0 / len(selected), index=selected)
 
-        wgt.loc[date, selected] = w
+        wgt.loc[date, w.index] = w
 
     return wgt, bm_wgt
 
@@ -207,7 +207,9 @@ def compute_weight_quantile(
             if weight_method == "inverse_vol":
                 inv_vol = 1.0 / vol.loc[date, selected]
                 inv_vol = inv_vol.replace([np.inf, -np.inf], np.nan).dropna()
-                w = inv_vol / inv_vol.sum()
+                if len(inv_vol) == 0:
+                    continue
+                w = inv_vol / inv_vol.sum()  # a ticker with zero / missing vol is skipped (weight 0)
             elif weight_method == "rank":
                 # Weight by rank within quantile (best ticker gets highest rank)
                 ranks = row.loc[selected]
@@ -216,7 +218,7 @@ def compute_weight_quantile(
             else:  # equal
                 w = pd.Series(1.0 / len(selected), index=selected)
 
-            q_wgts[str(q)].loc[date, selected] = w
+            q_wgts[str(q)].loc[date, w.index] = w
 
     return q_wgts, bm_wgt
 
@@ -267,7 +269,9 @@ def backtest(
                 prev_equity = nav.loc[prev_date]
                 dollar_pnl = dollar_pos * ret_sub.loc[date].values
                 dollar_pos += dollar_pnl
-                prev_w = dollar_pos / dollar_pos.sum()
+                invested = dollar_pos.sum()
+                # drifted weights; an all-cash book (zero weights) has none
+                prev_w = dollar_pos / invested if invested != 0 else np.zeros_like(dollar_pos)
                 new_w = weight.loc[date].values
                 turn = np.sum(np.abs(new_w - prev_w)) / 2
                 equity_after_cost = (prev_equity + dollar_pnl.sum()) * (1 - turn * tcost * 2)
@@ -286,7 +290,6 @@ def backtest(
             dollar_pnl = dollar_pos * ret_sub.loc[date].values
             dollar_pos += dollar_pnl
             nav.loc[date] = prev_equity + dollar_pnl.sum()
-            prev_w = dollar_pos / dollar_pos.sum()
 
     turnover = pd.Series(turnover)
     return nav, turnover

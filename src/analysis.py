@@ -36,6 +36,7 @@ from .portfolio import (
     compute_weight_quantile,
     compute_weight_top_k,
     equal_weight_benchmark,
+    rebalance_dates,
     run_quantile_backtest,
     run_top_k_backtest,
     to_rebalance_dates,
@@ -49,8 +50,6 @@ class AnalysisError(Exception):
 
 @dataclass
 class AnalysisResult:
-    dataset: pd.DataFrame                # prices of the selected (satellite) universe
-    bm_data: pd.Series | None            # custom BM composite price, None otherwise
     params: dict                         # settings + display window, as stored for the charts
     navs: pd.DataFrame                   # display window: strategy column(s) + BM column
     signal: pd.DataFrame                 # full signal, incl. the tentative current-month row
@@ -78,19 +77,53 @@ def check_whole_number(value, minimum: int, label: str) -> str | None:
     return None
 
 
+def check_tcost(value) -> str | None:
+    """Problem with the transaction cost input (percent, 0 to 1), or None.
+
+    The number input sends None when it is blank, out of range or off its 0.01 step:
+    that must not run as zero cost.
+    """
+    problem = "Transaction cost: enter a number from 0 to 1 (%)."
+    if value is None or value == "":
+        return problem
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return problem
+    return None if 0 <= number <= 1 else problem
+
+
+def check_backtest_dates(start, end) -> str | None:
+    """Problem with the Backtest Start / End Date pair, or None (no end date = up to the latest data)."""
+    if end is not None and pd.to_datetime(end) <= pd.to_datetime(start):
+        return "Backtest End Date must be after Backtest Start Date."
+    return None
+
+
+def parse_seed(value) -> int | None:
+    """Optimizer seed: blank = random (None), otherwise a whole number >= 0 (AnalysisError if not)."""
+    if value is None or str(value).strip() == "":
+        return None
+    problem = check_whole_number(str(value).strip(), 0, "Seed")
+    if problem:
+        raise AnalysisError(problem)
+    return int(float(value))
+
+
 def parse_core_config(core_config: list | None, core_weight_pct) -> dict:
     """Validated core-satellite settings: {"tickers", "weights", "ratio"}.
 
-    Rows without a ticker or with a non-positive weight are ignored. Raises AnalysisError when no
-    core ticker is left or the core allocation is not between 1 and 99 %.
+    Rows without a ticker or with a non-positive weight are ignored; rows of the same ticker add up
+    (as in the custom benchmark). Raises AnalysisError when no core ticker is left or the core
+    allocation is not between 1 and 99 %.
     """
-    tickers, weights = [], []
+    merged: dict[str, float] = {}
     for row in core_config or []:
         ticker = (row.get("ticker") or "").strip().upper()
         weight = float(row.get("weight") or 0)
         if ticker and weight > 0:
-            tickers.append(ticker)
-            weights.append(weight)
+            merged[ticker] = merged.get(ticker, 0.0) + weight
+    tickers, weights = list(merged), list(merged.values())
     if not tickers:
         raise AnalysisError(
             "Core-Satellite mode requires core tickers. Please configure and Apply core settings."
@@ -171,6 +204,26 @@ def build_composite_bm(bm_config: list, start_date: str) -> tuple:
     return composite_price, bm_label, warn_msgs
 
 
+def _check_quantiles_filled(signal: pd.DataFrame, n_quantiles: int, display_start, display_end) -> None:
+    """Every quantile must hold a ticker in every month shown (n ranked tickers >= n quantiles).
+
+    Months before the shown window may have fewer ranked tickers: their empty buckets are cash
+    and do not affect the shown returns.
+    """
+    n_ranked = signal.notna().sum(axis=1)
+    n_ranked.index = rebalance_dates(n_ranked.index)
+    shown = n_ranked[:display_end]
+    opened = shown.index[shown.index <= display_start]  # the rebalance holding on display_start
+    if len(opened):
+        shown = shown[opened[-1]:]
+    if len(shown) and shown.min() < n_quantiles:
+        fewest = int(shown.min())
+        raise AnalysisError(
+            f"Number of Quantiles ({n_quantiles}) is more than the tickers with a signal in some months "
+            f"(as few as {fewest}), so some quantiles would hold nothing. Use {fewest} or fewer."
+        )
+
+
 def run_analysis(
     tickers: list[str],
     start_date: str = DEFAULT_START_DATE,
@@ -205,23 +258,26 @@ def run_analysis(
         strategy_mode = "single"
         notices.append("Core-Satellite applies to Top-K only. Quantile results exclude the core.")
 
-    # Validate core-satellite settings (raises with a user-facing message)
+    # Validate settings (raise with a user-facing message; never fall back to a default)
     core = parse_core_config(core_config, core_weight_pct) if strategy_mode == "core-satellite" else None
+    for problem in (check_backtest_dates(backtest_start_date, backtest_end_date), check_tcost(tcost_pct)):
+        if problem:
+            raise AnalysisError(problem)
 
     # Calculate weights
     if weight_mode == "equal":
         short_wgt = mid_wgt = long_wgt = 1 / 3
     else:
         total = short_wgt + mid_wgt + long_wgt
-        if total > 0:
-            short_wgt, mid_wgt, long_wgt = short_wgt / total, mid_wgt / total, long_wgt / total
+        if total <= 0:  # every rank would tie: the first tickers in column order would be held
+            raise AnalysisError("Custom window weights: set at least one of Short / Mid / Long above 0.")
+        short_wgt, mid_wgt, long_wgt = short_wgt / total, mid_wgt / total, long_wgt / total
 
     # Handle top_k
     if select_all:
         top_k = None
 
-    # Ensure tcost is a number (input is in %, convert to decimal)
-    tcost = float(tcost_pct) / 100.0 if tcost_pct else 0.0
+    tcost = float(tcost_pct) / 100.0  # input is one-way, in percent
 
     # Load data
     dataset, missing = load_price_data(tickers, start_date=start_date)
@@ -254,6 +310,8 @@ def run_analysis(
             custom_bm_label = bm_label
         else:
             warnings.append("Custom BM could not be built. Using Equal Weight BM instead.")
+    elif bm_type == "custom":
+        warnings.append("Custom BM has no tickers applied. Using Equal Weight BM instead.")
 
     # Generate signal
     signal = generate_signal(
@@ -366,13 +424,21 @@ def run_analysis(
     # Display window: backtest start / end dates
     backtest_start = pd.to_datetime(backtest_start_date)
     actual_start = navs.index[navs.index >= backtest_start]
-    display_start = actual_start[0] if len(actual_start) > 0 else navs.index[0]
+    if len(actual_start) == 0:
+        raise AnalysisError(f"No results from Backtest Start Date on: the data ends on {navs.index[-1]:%Y-%m-%d}.")
+    display_start = actual_start[0]
 
     display_end = navs.index[-1]
     if backtest_end_date is not None:
-        actual_end = navs.index[navs.index <= pd.to_datetime(backtest_end_date)]
-        if len(actual_end) > 0:
-            display_end = actual_end[-1]
+        actual_end = navs.index[(navs.index >= display_start) & (navs.index <= pd.to_datetime(backtest_end_date))]
+        if len(actual_end) < 2:
+            raise AnalysisError(
+                f"No results up to Backtest End Date: the backtest starts on {display_start:%Y-%m-%d}."
+            )
+        display_end = actual_end[-1]
+
+    if strategy_type == "Quantile":
+        _check_quantiles_filled(signal, n_quantiles, display_start, display_end)
 
     navs_display = navs.loc[display_start:display_end].copy()
     # Keep the full signal (incl. tentative BME row using latest close) for the Current Signal panel.
@@ -405,8 +471,6 @@ def run_analysis(
     }
 
     return AnalysisResult(
-        dataset=dataset,
-        bm_data=bm_data,
         params=params,
         navs=navs_display,
         signal=signal.copy(),

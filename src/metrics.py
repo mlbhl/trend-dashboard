@@ -100,6 +100,7 @@ def kpi_lines(kpi: dict) -> list[str]:
         f"Sharpe: {kpi['sharpe']:.2f}",
         f"MDD: {kpi['mdd']:.1%}",
         f"YTD: {kpi['ytd']:.1%}",
+        f"MTD: {kpi['mtd']:.1%}",
     ]
 
 

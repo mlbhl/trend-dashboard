@@ -296,7 +296,8 @@ def create_quantile_holding_heatmap(
         indices = [int(i * (len(_palette) - 1) / (n_q - 1)) for i in range(n_q)] if n_q > 1 else [2]
         colors = [_palette[i] for i in indices]
     else:
-        colors = px.colors.qualitative.Set1[:n_q]
+        # More quantiles than palette colours: interpolate along the same red ... blue scale
+        colors = px.colors.sample_colorscale(_palette, [i / (n_q - 1) for i in range(n_q)])
     colorscale = []
     for i in range(n_q):
         lo = i / n_q
@@ -486,7 +487,8 @@ def create_quantile_spread_chart(
     if 'Q1' not in q_nav.columns or top_q not in q_nav.columns:
         return go.Figure()
 
-    spread = q_nav[top_q] - q_nav['Q1']
+    rebased = q_nav[[top_q, 'Q1']] / q_nav[[top_q, 'Q1']].iloc[0] * 100  # same base as the NAV chart
+    spread = rebased[top_q] - rebased['Q1']
 
     fig = go.Figure()
 
@@ -504,7 +506,7 @@ def create_quantile_spread_chart(
     fig.update_layout(
         title=title,
         xaxis_title="Date",
-        yaxis_title="Spread (NAV)",
+        yaxis_title="Spread (NAV rebased to 100)",
         height=height,
         autosize=True,
         dragmode=False,

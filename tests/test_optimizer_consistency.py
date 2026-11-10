@@ -9,6 +9,7 @@ import pytest
 from src.metrics import sharpe_from_nav
 from src.optimizer import (
     _benchmark_weights,
+    _first_rebalance_on_or_after,
     _period_nav,
     _strategy_nav,
     _strategy_sharpe,
@@ -72,15 +73,30 @@ def test_training_window_score_equals_dashboard_run_on_that_window(prices_late, 
     assert score == pytest.approx(sharpe_from_nav(dash_nav), rel=1e-12)
 
 
-def test_window_nav_restarts_at_first_rebalance_and_stops_at_end(prices):
+def test_window_nav_is_the_dashboard_display_window(prices):
+    """A window starting mid-month keeps the positions of the previous rebalance, exactly as
+    Run Analysis shows a backtest cut at Backtest Start / End Date."""
     sig = generate_signal(prices, **PARAMS)
     vol = calc_vol(prices).resample("BME").last()
-    nav = _strategy_nav(prices, sig, vol, start_date="2017-03-15", end_date="2017-09-30")
+    full = _strategy_nav(prices, sig, vol, tcost=0.002)
+    nav = _strategy_nav(prices, sig, vol, tcost=0.002, start_date="2017-03-15", end_date="2017-09-30")
 
-    assert nav.index[0] == pd.Timestamp("2017-04-03")  # first rebalance on/after start
+    assert nav.index[0] == pd.Timestamp("2017-03-15")
     assert nav.index[-1] == pd.Timestamp("2017-09-29")  # last business day <= end
-    assert nav.iloc[0] == 1000.0
+    shown = full["2017-03-15":"2017-09-30"]
+    np.testing.assert_allclose((nav / nav.iloc[0]).values, (shown / shown.iloc[0]).values, rtol=1e-12)
+
+    assert _strategy_nav(prices, sig, vol, start_date="2017-04-03").iloc[0] == 1000.0  # rebalance day
     assert _strategy_nav(prices, sig, vol, start_date="2030-01-01") is None
+
+
+@pytest.mark.parametrize("day, expected", [
+    ("2017-01-01", "2017-01-02"),  # Sunday 1st: January's rebalance is Monday the 2nd
+    ("2017-01-02", "2017-01-02"),
+    ("2017-01-03", "2017-02-01"),  # January's rebalance has passed: next is February's
+])
+def test_first_rebalance_on_or_after(day, expected):
+    assert _first_rebalance_on_or_after(day) == pd.Timestamp(expected)
 
 
 @pytest.mark.parametrize("lag", [0, 1, 2])
@@ -95,9 +111,11 @@ def test_benchmark_weights_equal_dashboard_benchmark(prices_late, monkeypatch, l
     assert sig.loc["2016-03-31", late].isna().all()
 
     bm_wgt = to_rebalance_dates(equal_weight_benchmark(sig))
-    dash_bm, _ = backtest(prices_late, bm_wgt, capital=1000, tcost=0, start_date=start)
+    dash_bm, _ = backtest(prices_late, bm_wgt, capital=1000, tcost=0)
+    dash_bm = dash_bm[start:]  # what Run Analysis shows from Backtest Start Date
     opt_bm = _period_nav(prices_late, _benchmark_weights(prices_late, sig), 0.0, start_date=start)
-    pd.testing.assert_series_equal(opt_bm, dash_bm, check_names=False, check_freq=False, rtol=1e-12)
+    pd.testing.assert_series_equal(opt_bm / opt_bm.iloc[0], dash_bm / dash_bm.iloc[0],
+                                   check_names=False, check_freq=False, rtol=1e-12)
 
 
 # ---------------------------------------------------------------- core-satellite universe
@@ -144,7 +162,7 @@ def test_walk_forward_oos_benchmark_equals_dashboard_benchmark(with_core):
     price_all = _with_core_tickers(universe_prices) if with_core else universe_prices
     core_cfg = CORE if with_core else None
 
-    wf = walk_forward_optimize(price_all, train_months=24, test_months=12, step_months=12,
+    wf = walk_forward_optimize(price_all, train_months=24, test_months=12,
                                n_samples=3, seed=0, core_config=core_cfg, universe=universe)
     combined_ret = wf["combined_oos_bm_nav"].pct_change()
     assert len(wf["folds"]) >= 2
@@ -181,7 +199,7 @@ def test_walk_forward_oos_curve_is_continuous(start):
     """Folds meet on rebalance dates and the OOS curve books every business day — also when the
     data starts mid-month (fold edges then fall between rebalance dates before snapping)."""
     price = make_prices(start=start)
-    wf = walk_forward_optimize(price, train_months=24, test_months=12, step_months=12,
+    wf = walk_forward_optimize(price, train_months=24, test_months=12,
                                n_samples=3, seed=0, tcost=0.002)
     folds, nav = wf["folds"], wf["combined_oos_nav"]
     assert len(folds) >= 2
@@ -194,7 +212,7 @@ def test_walk_forward_oos_curve_is_continuous(start):
 def test_walk_forward_oos_is_one_continuous_dashboard_backtest():
     """Switching folds is an ordinary rebalance with turnover cost — not a free restart."""
     price = make_prices(start="2015-01-14")
-    wf = walk_forward_optimize(price, train_months=24, test_months=12, step_months=12,
+    wf = walk_forward_optimize(price, train_months=24, test_months=12,
                                n_samples=3, seed=0, tcost=0.002)
     expected = _dashboard_oos(price, wf, tcost=0.002)
     pd.testing.assert_series_equal(wf["combined_oos_nav"], expected, check_names=False, check_freq=False,
@@ -203,11 +221,11 @@ def test_walk_forward_oos_is_one_continuous_dashboard_backtest():
 
 def test_walk_forward_custom_benchmark_covers_the_same_window():
     price = make_prices(start="2015-01-14")
-    wf = walk_forward_optimize(price, train_months=24, test_months=12, step_months=12, n_samples=3, seed=0,
+    wf = walk_forward_optimize(price, train_months=24, test_months=12, n_samples=3, seed=0,
                                bm_ticker="T05", bm_data=price["T05"])
     assert wf["combined_oos_bm_nav"].index.equals(wf["combined_oos_nav"].index)
 
 
 def test_walk_forward_rejects_zero_test_months():
     with pytest.raises(ValueError):
-        walk_forward_optimize(make_prices(), train_months=24, test_months=0, step_months=0, n_samples=2, seed=0)
+        walk_forward_optimize(make_prices(), train_months=24, test_months=0, n_samples=2, seed=0)

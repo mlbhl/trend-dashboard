@@ -532,8 +532,9 @@ def _tcost_section():
                 ),
                 dbc.InputGroupText("%"),
             ],
-            className="mb-3",
+            className="mb-1",
         ),
+        html.Div(id="tcost-warning", className="small text-danger mb-3"),
         html.Hr(),
     ]
 
@@ -634,7 +635,7 @@ def _optimization_section():
                     style={"cursor": "pointer", "fontSize": "0.8rem"},
                 ),
                 dbc.Tooltip(
-                    "Uses grid search to optimize window and weight parameters by maximizing the Sharpe ratio over the backtest period.",
+                    "Uses grid search to optimize window and weight parameters by maximizing the Sharpe ratio from Backtest Start Date to Backtest End Date (the Sharpe Run Analysis shows with those parameters).",
                     target="help-optimization",
                     placement="right",
                 ),

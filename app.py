@@ -4,6 +4,8 @@ Momentum Strategy Analysis App using Dash framework.
 This is the main entry point for the Dash application.
 """
 
+from pathlib import Path
+
 import dash
 import dash_bootstrap_components as dbc
 from dash import DiskcacheManager
@@ -12,8 +14,8 @@ import diskcache
 from dash_components.layout import create_layout
 from dash_components.callbacks import register_callbacks
 
-# Setup diskcache for long callbacks
-cache = diskcache.Cache("./cache")
+# Setup diskcache for long callbacks (next to this file, whatever the working directory)
+cache = diskcache.Cache(str(Path(__file__).resolve().parent / "cache"))
 background_callback_manager = DiskcacheManager(cache)
 
 # Initialize Dash app with Bootstrap theme
@@ -26,8 +28,8 @@ app = dash.Dash(
     update_title="Loading...",
 )
 
-# Create layout
-app.layout = create_layout()
+# Layout is a function: Dash builds it on every page load, so date defaults are today's
+app.layout = create_layout
 
 # Register callbacks
 register_callbacks(app)

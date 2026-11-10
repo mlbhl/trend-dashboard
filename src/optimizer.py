@@ -115,19 +115,30 @@ def _period_nav(
     start_date: str | None = None,
     end_date: str | None = None,
 ) -> pd.Series | None:
-    """portfolio.backtest() on [start_date, end_date], starting from the first rebalance in the window.
+    """portfolio.backtest() NAV on [start_date, end_date], as Run Analysis shows that window.
 
-    Returns None when no rebalance date falls inside the window.
+    The backtest starts at the last rebalance on or before start_date (the positions held on
+    start_date; the first rebalance after it if there is none), then the NAV is cut to the window.
+    Returns None when the window holds no position.
     """
     if end_date is not None:
         end_date = pd.to_datetime(end_date)
         price, wgt = price[:end_date], wgt[:end_date]
     if start_date is not None:
-        wgt = wgt[wgt.index >= pd.to_datetime(start_date)]
-    if len(wgt) == 0 or len(price[wgt.index[0]:]) == 0:
+        start_date = pd.to_datetime(start_date)
+        opened = wgt.index[wgt.index <= start_date]
+        if len(opened):
+            wgt = wgt[opened[-1]:]
+    if len(wgt) == 0:
+        return None
+    price = price[wgt.index[0]:]
+    if len(price) == 0:
         return None
     nav, _ = backtest(price, wgt, capital=1000.0, tcost=tcost)
-    return nav.dropna()
+    nav = nav.dropna()
+    if start_date is not None:
+        nav = nav[start_date:]
+    return nav if len(nav) else None
 
 
 def _holding_month_start(ts) -> pd.Timestamp:
@@ -138,6 +149,13 @@ def _holding_month_start(ts) -> pd.Timestamp:
     ts = pd.Timestamp(ts)
     prev_month_end = ts.replace(day=1) - pd.Timedelta(days=1)
     return rebalance_dates([pd.offsets.BMonthEnd().rollback(prev_month_end)])[0]
+
+
+def _first_rebalance_on_or_after(ts) -> pd.Timestamp:
+    """First rebalance date on or after `ts`."""
+    ts = pd.Timestamp(ts)
+    opening = _holding_month_start(ts)
+    return opening if opening >= ts else _holding_month_start(ts + pd.offsets.MonthBegin(1))
 
 
 def _benchmark_weights(
@@ -173,10 +191,11 @@ def _strategy_sharpe(
     weight_method: str = "equal",
     tcost: float = 0.0,
     start_date: str | None = None,
+    end_date: str | None = None,
     core_config: dict | None = None,
 ) -> float:
-    """Sharpe ratio of the strategy from start_date (price is already cut to the training window)."""
-    nav = _strategy_nav(price, signal, vol, top_k, weight_method, tcost, start_date, core_config=core_config)
+    """Sharpe ratio of the strategy on [start_date, end_date], as Run Analysis shows it."""
+    nav = _strategy_nav(price, signal, vol, top_k, weight_method, tcost, start_date, end_date, core_config)
     return sharpe_from_nav(nav)
 
 
@@ -199,9 +218,8 @@ def optimize_sharpe_period(
     Optimize parameters for a specific period using precomputed data.
     Internal function used by both optimize_sharpe and walk_forward_optimize.
     """
-    # Filter price data to the period
-    if start_date:
-        price = price[start_date:]
+    # Nothing after the period may be used. (The start is handled by _period_nav: positions held
+    # on start_date come from the rebalance before it.)
     if end_date:
         price = price[:end_date]
 
@@ -242,6 +260,7 @@ def optimize_sharpe_period(
             weight_method=weight_method,
             tcost=tcost,
             start_date=start_date,
+            end_date=end_date,
             core_config=core_config,
         )
 
@@ -278,6 +297,7 @@ def optimize_sharpe(
     weight_method: str = "equal",
     tcost: float = 0.0,
     start_date: str | None = None,
+    end_date: str | None = None,
     thresh: int = 10,
     n_samples: int | None = None,
     seed: int | None = None,
@@ -288,12 +308,15 @@ def optimize_sharpe(
     """
     Find optimal lookback windows and weights to maximize Sharpe ratio.
 
+    The score is the Sharpe Run Analysis shows for [start_date, end_date] with those parameters.
+
     Args:
         price: Daily price DataFrame
         top_k: Number of top-ranked assets (None for all)
         weight_method: Weighting method
         tcost: Transaction cost
         start_date: Backtest start date
+        end_date: Backtest end date (data after it is not used)
         thresh: Minimum valid tickers
         n_samples: Number of random samples to test (None for full grid search)
         seed: Random seed for reproducibility (only used with n_samples)
@@ -318,6 +341,7 @@ def optimize_sharpe(
         weight_method=weight_method,
         tcost=tcost,
         start_date=start_date,
+        end_date=end_date,
         thresh=thresh,
         n_samples=n_samples,
         seed=seed,
@@ -330,7 +354,6 @@ def walk_forward_optimize(
     price: pd.DataFrame,
     train_months: int = 36,
     test_months: int = 12,
-    step_months: int = 12,
     window_type: str = "rolling",
     top_k: int | None = 5,
     weight_method: str = "equal",
@@ -354,8 +377,8 @@ def walk_forward_optimize(
     Args:
         price: Daily price DataFrame
         train_months: Training period in months (minimum for expanding)
-        test_months: Testing period in months
-        step_months: Step size for rolling forward
+        test_months: Testing period in months; folds also step forward by this much, so the
+            out-of-sample windows are back to back (a different step would overlap or leave gaps)
         window_type: "rolling" (fixed window) or "expanding" (growing window)
         top_k: Number of top-ranked assets
         weight_method: Weighting method
@@ -387,20 +410,20 @@ def walk_forward_optimize(
 
     # Fold periods. Boundaries are snapped to rebalance dates (the date that opens a holding
     # month), so fold k's test window ends exactly where fold k+1's begins: no gap, no overlap.
-    if test_months < 1 or step_months < 1:
-        raise ValueError("test_months and step_months must be at least 1")
+    if test_months < 1:
+        raise ValueError("test_months must be at least 1")
     folds = []
     first_train_end = start + relativedelta(months=train_months)
     k = 0
     while True:
-        train_end_cal = first_train_end + relativedelta(months=k * step_months)
+        train_end_cal = first_train_end + relativedelta(months=k * test_months)
         test_start = _holding_month_start(train_end_cal)
         test_end = _holding_month_start(train_end_cal + relativedelta(months=test_months))
         if test_end > end:
             break
         folds.append({
             # expanding: always from the beginning; rolling: fixed-size window moving forward
-            'train_start': start if window_type == "expanding" else start + relativedelta(months=k * step_months),
+            'train_start': start if window_type == "expanding" else start + relativedelta(months=k * test_months),
             'train_end': test_start,
             'test_start': test_start,
             'test_end': test_end,
@@ -436,7 +459,8 @@ def walk_forward_optimize(
             top_k=top_k,
             weight_method=weight_method,
             tcost=tcost,
-            start_date=str(fold['train_start'].date()),
+            # training is scored from its first rebalance (a fresh start, not an inherited position)
+            start_date=str(_first_rebalance_on_or_after(fold['train_start']).date()),
             end_date=str(fold['train_end'].date()),
             thresh=thresh,
             n_samples=n_samples,
@@ -528,7 +552,7 @@ def walk_forward_optimize(
         top_k=top_k,
         weight_method=weight_method,
         tcost=tcost,
-        start_date=str(final_train_start.date()) if hasattr(final_train_start, 'date') else str(final_train_start),
+        start_date=str(_first_rebalance_on_or_after(final_train_start).date()),
         end_date=str(end.date()) if hasattr(end, 'date') else str(end),
         thresh=thresh,
         n_samples=n_samples,
@@ -544,19 +568,10 @@ def walk_forward_optimize(
         'end': end.strftime('%Y-%m-%d') if hasattr(end, 'strftime') else str(end),
     }
 
-    # Save OOS date range for dynamic benchmark calculation later
-    oos_date_range = None
-    if combined_oos_nav is not None and len(combined_oos_nav) > 0:
-        oos_date_range = {
-            'start': combined_oos_nav.index[0].strftime('%Y-%m-%d'),
-            'end': combined_oos_nav.index[-1].strftime('%Y-%m-%d'),
-        }
-
     return {
         'folds': fold_results,
         'combined_oos_nav': combined_oos_nav,
         'combined_oos_bm_nav': combined_oos_bm_nav,
-        'oos_date_range': oos_date_range,
         'oos_sharpe': combined_oos_sharpe,
         'oos_sharpe_avg': oos_sharpe_avg,
         'is_sharpe_avg': is_sharpe_avg,

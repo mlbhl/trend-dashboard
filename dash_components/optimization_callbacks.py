@@ -15,8 +15,11 @@ from src.optimizer import optimize_sharpe, walk_forward_optimize
 from src.analysis import (
     AnalysisError,
     build_composite_bm,
+    check_backtest_dates,
+    check_tcost,
     check_whole_number,
     parse_core_config,
+    parse_seed,
     with_core_prices,
 )
 
@@ -76,6 +79,7 @@ def register(app):
         Input("optimize-btn", "n_clicks"),
         State("start-date", "date"),
         State("backtest-start-date", "date"),
+        State("backtest-end-date", "date"),
         State("ticker-store", "data"),
         State("thresh-slider", "value"),
         State("select-all-tickers-checkbox", "value"),
@@ -100,6 +104,7 @@ def register(app):
         n_clicks,
         start_date,
         backtest_start_date,
+        backtest_end_date,
         selected_tickers,
         thresh,
         select_all,
@@ -117,13 +122,16 @@ def register(app):
         if not n_clicks or not selected_tickers or len(selected_tickers) < 2:
             raise PreventUpdate
 
-        # Validate inputs (the button is disabled for these already; this guards stale states)
-        problem = check_whole_number(n_samples, 100, "Samples") if opt_mode == "random" else None
+        # Validate inputs (samples also disable the button; shared sidebar inputs are checked here)
+        problems = [check_whole_number(n_samples, 100, "Samples") if opt_mode == "random" else None,
+                    check_backtest_dates(backtest_start_date, backtest_end_date), check_tcost(tcost)]
         try:
+            problem = next((p for p in problems if p), None)
             if problem:
                 raise AnalysisError(problem)
             opt_core_config = (parse_core_config(core_config, core_weight_pct)
                                if strategy_mode == "core-satellite" else None)
+            opt_seed = parse_seed(opt_seed) if opt_mode == "random" else None
         except AnalysisError as err:
             return None, _error_alert(err), ""
         n_samples = int(n_samples) if opt_mode == "random" else None
@@ -135,12 +143,7 @@ def register(app):
         # Handle parameters
         if select_all:
             top_k = None
-        tcost = float(tcost) / 100.0 if tcost else 0.0
-        # Parse seed from text input
-        try:
-            opt_seed = int(opt_seed) if opt_seed and str(opt_seed).strip().isdigit() else None
-        except (ValueError, TypeError):
-            opt_seed = None
+        tcost = float(tcost) / 100.0
 
         # Core-only tickers get prices too (they never enter the signal: see universe=)
         if opt_core_config:
@@ -158,6 +161,7 @@ def register(app):
             weight_method=weight_method,
             tcost=tcost,
             start_date=str(backtest_start_date),
+            end_date=backtest_end_date,
             thresh=thresh,
             n_samples=n_samples,
             seed=opt_seed,
@@ -357,12 +361,13 @@ def register(app):
             raise PreventUpdate
 
         # Validate inputs (the button is disabled for these already; this guards stale states)
-        problems = [p for p in _wf_input_problems(train_months, test_months, wf_samples) if p]
+        problems = [p for p in (*_wf_input_problems(train_months, test_months, wf_samples), check_tcost(tcost)) if p]
         try:
             if problems:
                 raise AnalysisError(problems[0])
             wf_core_config = (parse_core_config(core_config, core_weight_pct)
                               if strategy_mode == "core-satellite" else None)
+            wf_seed = parse_seed(wf_seed)
         except AnalysisError as err:
             return (None, _error_alert(err), "") + empty_results
         train_months, test_months, wf_samples = int(train_months), int(test_months), int(wf_samples)
@@ -383,12 +388,7 @@ def register(app):
         # Handle parameters
         if select_all:
             top_k = None
-        tcost = float(tcost) / 100.0 if tcost else 0.0
-        # Parse seed from text input
-        try:
-            wf_seed = int(wf_seed) if wf_seed and str(wf_seed).strip().isdigit() else None
-        except (ValueError, TypeError):
-            wf_seed = None
+        tcost = float(tcost) / 100.0
 
         # Core-only tickers get prices too (they never enter the signal: see universe=)
         if wf_core_config:
@@ -409,9 +409,6 @@ def register(app):
             price=dataset,
             train_months=train_months,
             test_months=test_months,
-            # step = test 강제: OOS 구간이 공백·중복 없이 이어져 결합 OOS 곡선이
-            # 주기적 재최적화 운용 시뮬레이션과 일치한다
-            step_months=test_months,
             window_type=window_type,
             top_k=top_k,
             weight_method=weight_method,
@@ -443,7 +440,6 @@ def register(app):
             "final_params": wf_result["final_params"],
             "final_sharpe": wf_result["final_sharpe"],
             "final_train_period": wf_result["final_train_period"],
-            "oos_date_range": wf_result["oos_date_range"],
             "combined_oos_nav": wf_result["combined_oos_nav"].to_json(date_format="iso") if wf_result["combined_oos_nav"] is not None else None,
             "combined_oos_bm_nav": wf_result["combined_oos_bm_nav"].to_json(date_format="iso") if wf_result["combined_oos_bm_nav"] is not None else None,
             "_bm_type": bm_type,
@@ -565,7 +561,8 @@ def register(app):
 
         # OOS NAV chart
         bm_name = wf_store["_bm_ticker"] if wf_store["_bm_type"] == "custom" and wf_store["_bm_ticker"] else "Equal Weight"
-        oos_nav_info = f"NAV from chaining all out-of-sample test periods. BM = {bm_name}"
+        oos_nav_info = (f"One continuous backtest over all out-of-sample test periods, each fold trading its own "
+                        f"parameters (switching folds is a normal rebalance). BM = {bm_name}")
 
         fig_oos = go.Figure()
         sharpe_comparison = ""

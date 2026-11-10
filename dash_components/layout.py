@@ -12,14 +12,13 @@ def create_layout():
     return dbc.Container(
         [
             # Stores for data
-            dcc.Store(id="dataset-store"),
-            dcc.Store(id="bm-data-store"),
             dcc.Store(id="params-store"),
             dcc.Store(id="nav-store"),
             dcc.Store(id="signal-store"),
             dcc.Store(id="weights-store"),
             dcc.Store(id="walk-forward-store"),
             dcc.Store(id="optimized-params-store"),
+            dcc.Store(id="run-analysis-busy", data=False),  # Run Analysis in progress
 
             # Download components
             dcc.Download(id="download-nav"),

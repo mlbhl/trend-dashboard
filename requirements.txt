@@ -1,9 +1,10 @@
 pandas>=2.2,<3
-numpy>=1.24,<2.5
+numpy>=2,<2.5
 yfinance==0.2.65
-plotly>=5.18,<7
+plotly>=6,<7
 matplotlib>=3.7,<4
-dash[diskcache]>=2.14,<4
-dash-bootstrap-components>=1.5,<3
+dash[diskcache]>=3,<4
+dash-bootstrap-components>=2,<3
+diskcache>=5.6
 python-dateutil>=2.8
-openpyxl>=3.1
+openpyxl>=3.1,<4
