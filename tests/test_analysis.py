@@ -70,6 +70,20 @@ def test_quantile_mode(market):
     assert set(res.weights) == {"Q1", "Q2", "Q3", "Q4"}
 
 
+def test_quantile_mode_ignores_core_satellite(market):
+    """Core-Satellite is Top-K only: quantile buckets and their benchmark stay core-free."""
+    core = [{"ticker": "SPY", "weight": 60}, {"ticker": "AGG", "weight": 40}]
+    res = run_analysis(UNIVERSE, strategy_type="Quantile", strategy_mode="core-satellite", core_config=core, thresh=9)
+    plain = run_analysis(UNIVERSE, strategy_type="Quantile", thresh=9)
+
+    assert list(res.navs.columns) == ["Q1", "Q2", "Q3", "Q4", "Q5", "BM (Equal Weight)"]
+    pd.testing.assert_frame_equal(res.navs, plain.navs)
+    assert res.warnings == ["Core-Satellite applies to Top-K only. Quantile results exclude the core."]
+    assert res.params["core_ratio"] is None and res.params["strategy_mode"] == "single"
+    # no core config needed in quantile mode
+    assert run_analysis(UNIVERSE, strategy_type="Quantile", strategy_mode="core-satellite", thresh=9).navs.shape
+
+
 def test_core_satellite_mode(market):
     core = [{"ticker": "SPY", "weight": 60}, {"ticker": "AGG", "weight": 40}]
     res = run_analysis(UNIVERSE, strategy_mode="core-satellite", core_weight_pct=70, core_config=core,

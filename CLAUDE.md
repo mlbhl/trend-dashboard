@@ -22,11 +22,11 @@ Price Data (Yahoo Finance) → Signal Generation → Portfolio Weights → Backt
 
 **Module Organization (`src/`):**
 - `analysis.py` - `run_analysis()`: everything the Run Analysis button computes (pure pandas, raises `AnalysisError`, returns warnings as strings). Used by the dashboard callback and the report. Also `build_composite_bm()` for Custom BM
-- `config.py` - Ticker presets (5; default `Alpha (Default)` = 20 ETFs), window parameters, weight methods, sidebar defaults (`DEFAULT_*`, read by `layout.py` and the report), `IMPLEMENTATION_LAG` (business days from month-end signal to rebalance; default 1)
+- `config.py` - Ticker presets (5; default `Alpha (Default)` = 20 ETFs), window parameters, weight methods, sidebar defaults (`DEFAULT_*`, read by `layout.py` and the report), `IMPLEMENTATION_LAG` (business days from month-end signal to rebalance; default 1), `PERIODS_PER_YEAR` (261: prices are on every weekday)
 - `data.py` - `load_price_data()` downloads and aligns daily prices from yfinance
 - `signals.py` - `generate_signal()` computes multi-window momentum rankings (cross-sectional)
 - `portfolio.py` - `compute_weight_top_k()`, `compute_weight_quantile()`, and `backtest()` engine
-- `metrics.py` - `summary_stats()` for CAGR, Sharpe, MDD; `calculate_kpis()` for dashboard display; `format_stats()` / `kpi_lines()` display strings shared by dashboard and report
+- `metrics.py` - `summary_stats()` for CAGR, Sharpe, MDD; `calculate_kpis()` for dashboard display; `format_stats()` / `kpi_lines()` display strings shared by dashboard and report; KPI YTD/MTD start from the previous year-/month-end close (same base as `annual_returns()` / `monthly_returns()`)
 - `charts.py` - Plotly visualizations: NAV, drawdown, allocation, heatmap, signal tables
 - `optimizer.py` - `optimize_sharpe()` grid search for optimal lookback windows and weights
 
@@ -58,7 +58,11 @@ Price Data (Yahoo Finance) → Signal Generation → Portfolio Weights → Backt
 
 **Rebalance timing:** signal weights are indexed by month-end signal date; move them to rebalance dates only via `portfolio.to_rebalance_dates()` / `rebalance_dates()` (reads `config.IMPLEMENTATION_LAG`). Never write `+ BMonthBegin(1)` / `+ BDay(n)` elsewhere — a test scans for it. Holidays are intentionally not skipped.
 
-**Benchmark & core-satellite:** BM = `portfolio.equal_weight_benchmark(signal)` (equal weight across tickers that have a signal — the strategy's own candidate set). Core blending = `portfolio.blend_core_satellite()`. `optimize_sharpe()` / `walk_forward_optimize()` take `universe=` (selectable tickers): in core-satellite mode `price` also carries core-only tickers, which must never enter the signal.
+**Benchmark & core-satellite:** BM = `portfolio.equal_weight_benchmark(signal)` (equal weight across tickers that have a signal — the strategy's own candidate set). Core blending = `portfolio.blend_core_satellite()`. Core-Satellite applies to Top-K only: in Quantile mode `run_analysis()` drops the core (with a notice) so buckets and BM stay core-free. `optimize_sharpe()` / `walk_forward_optimize()` take `universe=` (selectable tickers): in core-satellite mode `price` also carries core-only tickers, which must never enter the signal.
+
+**Annualisation:** prices are resampled to every weekday (holidays forward-filled), so annualise only with `config.PERIODS_PER_YEAR` (261) — `metrics.summary_stats()` / `metrics.sharpe_from_nav()`. Never hard-code 252.
+
+**Walk-forward:** fold edges are snapped to rebalance dates (`_holding_month_start()`), and the out-of-sample curve is ONE continuous backtest of the folds' weights concatenated (a fold switch is a normal rebalance with turnover cost) — never chain per-fold NAVs.
 
 **Backtest rules live only in `portfolio.py`** (`compute_weight_top_k()`, `backtest()`). `optimizer.py` calls them via `_strategy_nav()` / `_benchmark_nav()` — never re-implement the weight or NAV loop there.
 
@@ -75,7 +79,7 @@ Price Data (Yahoo Finance) → Signal Generation → Portfolio Weights → Backt
 ```bash
 python -m pytest
 ```
-- Network-free (synthetic prices), ~5s. pytest is a dev tool and is not in `requirements.txt`.
+- Network-free (synthetic prices), ~20s. pytest is a dev tool and is not in `requirements.txt`.
 - `pytest.ini` turns `FutureWarning` into errors so pandas deprecations fail fast.
 - `tests/test_optimizer_consistency.py` checks the optimizer scores parameters exactly like the dashboard: momentum cache (`combine_signals`) == `generate_signal`, and train/test windows == `portfolio.backtest` run on that window with full-history volatility.
 - `tests/test_golden.py` snapshots end-to-end numbers in `tests/golden/core_outputs.json`. After an *intentional* math change: `UPDATE_GOLDEN=1 python -m pytest tests/test_golden.py`, then review the JSON diff before committing.

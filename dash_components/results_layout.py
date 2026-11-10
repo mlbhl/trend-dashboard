@@ -52,7 +52,8 @@ def create_instructions():
                                     [
                                         html.Strong("Core-Satellite: "),
                                         "blends a fixed-weight core allocation with a momentum satellite. "
-                                        "Configure core tickers/weights and the core ratio, then click Apply.",
+                                        "Configure core tickers/weights and the core ratio, then click Apply. "
+                                        "Applies to Top-K only (Quantile results exclude the core).",
                                     ]
                                 ),
                             ]
@@ -161,7 +162,7 @@ def quick_reference_section():
                         html.Ul(
                             [
                                 html.Li("Single: pure momentum rotation."),
-                                html.Li("Core-Satellite: fixed core + momentum satellite, blended at weight level."),
+                                html.Li("Core-Satellite: fixed core + momentum satellite, blended at weight level (Top-K only)."),
                             ]
                         ),
                         html.H6("Signal Parameters"),

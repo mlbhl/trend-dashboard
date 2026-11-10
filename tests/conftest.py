@@ -12,10 +12,11 @@ def make_prices(
     seed: int = 0,
     late_tickers: int = 0,
     late_start: str = "2016-01-01",
+    start: str = START,
 ) -> pd.DataFrame:
     """Random-walk daily prices; the last `late_tickers` columns are NaN before `late_start`."""
     rng = np.random.default_rng(seed)
-    idx = pd.bdate_range(START, periods=PERIODS)
+    idx = pd.bdate_range(start, periods=PERIODS)
     drift = np.linspace(-0.0003, 0.0006, n_tickers)
     rets = rng.normal(drift, 0.01, size=(PERIODS, n_tickers))
     prices = pd.DataFrame(

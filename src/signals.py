@@ -3,6 +3,8 @@
 import numpy as np
 import pandas as pd
 
+from .config import PERIODS_PER_YEAR
+
 
 def generate_signal(
     price: pd.DataFrame,
@@ -65,9 +67,9 @@ def calc_vol(
     ret = price.pct_change()
 
     if ew:
-        vol = ret.ewm(com=com, min_periods=com * 2).std() * np.sqrt(252)
+        vol = ret.ewm(com=com, min_periods=com * 2).std() * np.sqrt(PERIODS_PER_YEAR)
     else:
-        vol = ret.rolling(window).std() * np.sqrt(252)
+        vol = ret.rolling(window).std() * np.sqrt(PERIODS_PER_YEAR)
 
     return vol
 

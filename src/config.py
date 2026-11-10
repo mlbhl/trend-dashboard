@@ -93,6 +93,10 @@ TICKER_DESCRIPTIONS = {
     '0132H0.KS': 'US Nuclear',
 }
 
+# Annualisation: prices are resampled to every weekday ('B', exchange holidays forward-filled),
+# so a year has ~261 observations. Every annualised number (CAGR, vol, Sharpe) uses this.
+PERIODS_PER_YEAR = 261
+
 # Default parameters
 DEFAULT_START_DATE = '2000-01-01'
 DEFAULT_BACKTEST_START_DATE = '2015-01-01'

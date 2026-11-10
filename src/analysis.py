@@ -148,6 +148,13 @@ def run_analysis(
 ) -> AnalysisResult:
     """Everything the Run Analysis button computes. Arguments mirror the sidebar controls;
     defaults are the sidebar defaults (src/config.py). tcost_pct is one-way, in percent."""
+    # Core-Satellite applies to Top-K only: quantile buckets are a signal diagnostic, and a shared
+    # core would wash out the spread between them (and the benchmark would no longer be comparable).
+    notices = []
+    if strategy_mode == "core-satellite" and strategy_type != "Top-K":
+        strategy_mode = "single"
+        notices.append("Core-Satellite applies to Top-K only. Quantile results exclude the core.")
+
     # Validate core-satellite config
     if strategy_mode == "core-satellite" and not core_config:
         raise AnalysisError(
@@ -180,7 +187,7 @@ def run_analysis(
         raise AnalysisError(error_msg)
 
     # Collect warnings
-    warnings = []
+    warnings = list(notices)
     if missing:
         warnings.append(f"Data not found for: {', '.join(missing)}")
 

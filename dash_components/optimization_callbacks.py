@@ -11,6 +11,7 @@ import plotly.graph_objects as go
 
 from src.config import DEFAULT_CORE_WEIGHT_PCT
 from src.data import load_price_data
+from src.metrics import sharpe_from_nav
 from src.optimizer import optimize_sharpe, walk_forward_optimize
 from src.analysis import build_composite_bm
 
@@ -658,12 +659,10 @@ def register(app):
 
             # Sharpe comparison
             oos_sharpe_val = wf_store["oos_sharpe"]
-            if oos_bm_nav is not None and len(oos_bm_nav) > 1:
-                bm_daily_ret = oos_bm_nav.pct_change().dropna()
-                if len(bm_daily_ret) > 0 and bm_daily_ret.std() > 0:
-                    oos_bm_sharpe = bm_daily_ret.mean() / bm_daily_ret.std() * np.sqrt(252)
-                    excess = oos_sharpe_val - oos_bm_sharpe
-                    sharpe_comparison = f"OOS Sharpe: Strategy {oos_sharpe_val:.2f} vs BM {oos_bm_sharpe:.2f} (Excess: {excess:+.2f})"
+            oos_bm_sharpe = sharpe_from_nav(oos_bm_nav)
+            if not np.isnan(oos_bm_sharpe):
+                excess = oos_sharpe_val - oos_bm_sharpe
+                sharpe_comparison = f"OOS Sharpe: Strategy {oos_sharpe_val:.2f} vs BM {oos_bm_sharpe:.2f} (Excess: {excess:+.2f})"
 
         return (
             wf_store,

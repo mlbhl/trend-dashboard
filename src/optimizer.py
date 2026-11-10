@@ -9,8 +9,10 @@ from .portfolio import (
     blend_core_satellite,
     compute_weight_top_k,
     equal_weight_benchmark,
+    rebalance_dates,
     to_rebalance_dates,
 )
+from .metrics import sharpe_from_nav
 from .signals import calc_vol
 
 
@@ -128,6 +130,25 @@ def _period_nav(
     return nav.dropna()
 
 
+def _holding_month_start(ts) -> pd.Timestamp:
+    """Rebalance date that opens the holding month of `ts`: previous business month-end + lag.
+
+    Walk-forward folds start and end on these dates, so consecutive test windows share an edge.
+    """
+    ts = pd.Timestamp(ts)
+    prev_month_end = ts.replace(day=1) - pd.Timedelta(days=1)
+    return rebalance_dates([pd.offsets.BMonthEnd().rollback(prev_month_end)])[0]
+
+
+def _benchmark_weights(
+    price: pd.DataFrame,
+    signal: pd.DataFrame,
+    core_config: dict | None = None,
+) -> pd.DataFrame:
+    """Dashboard benchmark weights at rebalance dates: equal weight across tickers with a signal (+ core)."""
+    return to_rebalance_dates(_with_core(equal_weight_benchmark(signal), price, core_config))
+
+
 def _strategy_nav(
     price: pd.DataFrame,
     signal: pd.DataFrame,
@@ -156,7 +177,7 @@ def _strategy_sharpe(
 ) -> float:
     """Sharpe ratio of the strategy from start_date (price is already cut to the training window)."""
     nav = _strategy_nav(price, signal, vol, top_k, weight_method, tcost, start_date, core_config=core_config)
-    return _calc_sharpe_from_nav(nav)
+    return sharpe_from_nav(nav)
 
 
 def optimize_sharpe_period(
@@ -434,49 +455,27 @@ def walk_forward_optimize(
     start = price.index[0]
     end = price.index[-1]
 
-    # Generate fold periods
+    # Fold periods. Boundaries are snapped to rebalance dates (the date that opens a holding
+    # month), so fold k's test window ends exactly where fold k+1's begins: no gap, no overlap.
+    if test_months < 1 or step_months < 1:
+        raise ValueError("test_months and step_months must be at least 1")
     folds = []
-
-    if window_type == "expanding":
-        # Expanding window: train_start is always 'start', train_end grows
-        # First fold starts after minimum train_months
-        current_train_end = start + relativedelta(months=train_months)
-
-        while True:
-            test_start = current_train_end
-            test_end = test_start + relativedelta(months=test_months)
-
-            if test_end > end:
-                break
-
-            folds.append({
-                'train_start': start,  # Always from the beginning
-                'train_end': current_train_end,
-                'test_start': test_start,
-                'test_end': test_end,
-            })
-
-            current_train_end = current_train_end + relativedelta(months=step_months)
-    else:
-        # Rolling window: fixed-size training window
-        current_train_start = start
-
-        while True:
-            train_end = current_train_start + relativedelta(months=train_months)
-            test_start = train_end
-            test_end = test_start + relativedelta(months=test_months)
-
-            if test_end > end:
-                break
-
-            folds.append({
-                'train_start': current_train_start,
-                'train_end': train_end,
-                'test_start': test_start,
-                'test_end': test_end,
-            })
-
-            current_train_start = current_train_start + relativedelta(months=step_months)
+    first_train_end = start + relativedelta(months=train_months)
+    k = 0
+    while True:
+        train_end_cal = first_train_end + relativedelta(months=k * step_months)
+        test_start = _holding_month_start(train_end_cal)
+        test_end = _holding_month_start(train_end_cal + relativedelta(months=test_months))
+        if test_end > end:
+            break
+        folds.append({
+            # expanding: always from the beginning; rolling: fixed-size window moving forward
+            'train_start': start if window_type == "expanding" else start + relativedelta(months=k * step_months),
+            'train_end': test_start,
+            'test_start': test_start,
+            'test_end': test_end,
+        })
+        k += 1
 
     if len(folds) == 0:
         return {
@@ -488,8 +487,9 @@ def walk_forward_optimize(
 
     total_folds = len(folds)
     fold_results = []
-    oos_navs = []
-    oos_bm_navs = []
+    strat_parts, bm_parts = [], []   # each fold's weights inside its own test window
+    oos_start = oos_end = None
+    last_params = None
 
     for fold_idx, fold in enumerate(folds):
         fold_seed = (seed + fold_idx) if seed is not None else None
@@ -515,72 +515,55 @@ def walk_forward_optimize(
             core_config=core_config,
         )
 
-        if opt_result['best_params'] is None:
-            continue
-
         bp = opt_result['best_params']
-        is_sharpe = opt_result['best_sharpe']
+        if bp is None:
+            if last_params is None:
+                continue  # out-of-sample period has not started yet
+            bp = last_params  # re-optimisation failed: keep trading the previous parameters
+        else:
+            fold_results.append({
+                'fold': fold_idx + 1,
+                'train_start': fold['train_start'].strftime('%Y-%m-%d'),
+                'train_end': fold['train_end'].strftime('%Y-%m-%d'),
+                'test_start': fold['test_start'].strftime('%Y-%m-%d'),
+                'test_end': fold['test_end'].strftime('%Y-%m-%d'),
+                'params': bp,
+                'is_sharpe': opt_result['best_sharpe'],
+            })
+        last_params = bp
 
-        # Test on out-of-sample period with optimized params
+        # Out-of-sample: this fold's parameters drive the rebalances inside its test window
         signal = combine_signals(
             momentums,
             bp['short_window'], bp['mid_window'], bp['long_window'],
             bp['short_wgt'], bp['mid_wgt'], bp['long_wgt'],
             thresh=thresh
         )
+        wgt, _ = _strategy_weights(price, signal, vol, top_k, weight_method, core_config)
+        bm_wgt = _benchmark_weights(price, signal, core_config)
+        in_window = (wgt.index >= fold['test_start']) & (wgt.index < fold['test_end'])
+        strat_parts.append(wgt[in_window])
+        bm_parts.append(bm_wgt[(bm_wgt.index >= fold['test_start']) & (bm_wgt.index < fold['test_end'])])
+        oos_start = fold['test_start'] if oos_start is None else oos_start
+        oos_end = fold['test_end']
 
-        # Get OOS NAV for this fold
-        oos_nav = _strategy_nav(
-            price, signal, vol,
-            top_k=top_k,
-            weight_method=weight_method,
-            tcost=tcost,
-            start_date=str(fold['test_start'].date()),
-            end_date=str(fold['test_end'].date()),
-            core_config=core_config,
-        )
-
-        # Get OOS Benchmark NAV for this fold
+    # One continuous out-of-sample backtest across all folds: the switch between folds is an
+    # ordinary rebalance (turnover cost included), exactly like periodically re-optimising live.
+    combined_oos_nav = combined_oos_bm_nav = None
+    if strat_parts:
+        combined_oos_nav = _period_nav(price, pd.concat(strat_parts), tcost, oos_start, oos_end)
         if bm_ticker and bm_data is not None:
-            # Custom ticker benchmark (buy and hold)
-            oos_bm_nav = _single_ticker_nav(
-                bm_data,
-                start_date=str(fold['test_start'].date()),
-                end_date=str(fold['test_end'].date()),
+            # Custom benchmark price series, rebased over the same window
+            combined_oos_bm_nav = _single_ticker_nav(
+                bm_data, start_date=str(oos_start.date()), end_date=str(oos_end.date())
             )
         else:
             # Equal weight across tickers with a signal, as in the dashboard (no tcost for BM)
-            oos_bm_nav = _benchmark_nav(
-                price,
-                signal,
-                tcost=0,
-                start_date=str(fold['test_start'].date()),
-                end_date=str(fold['test_end'].date()),
-                core_config=core_config,
-            )
-
-        if oos_nav is not None and len(oos_nav) > 0:
-            oos_navs.append(oos_nav)
-        if oos_bm_nav is not None and len(oos_bm_nav) > 0:
-            oos_bm_navs.append(oos_bm_nav)
-
-        oos_sharpe = _calc_sharpe_from_nav(oos_nav) if oos_nav is not None else np.nan
-
-        fold_results.append({
-            'fold': fold_idx + 1,
-            'train_start': fold['train_start'].strftime('%Y-%m-%d'),
-            'train_end': fold['train_end'].strftime('%Y-%m-%d'),
-            'test_start': fold['test_start'].strftime('%Y-%m-%d'),
-            'test_end': fold['test_end'].strftime('%Y-%m-%d'),
-            'params': bp,
-            'is_sharpe': is_sharpe,
-            'oos_sharpe': oos_sharpe,
-        })
-
-    # Combine all OOS NAVs
-    combined_oos_nav = _combine_navs(oos_navs) if oos_navs else None
-    combined_oos_bm_nav = _combine_navs(oos_bm_navs) if oos_bm_navs else None
-    combined_oos_sharpe = _calc_sharpe_from_nav(combined_oos_nav) if combined_oos_nav is not None else np.nan
+            combined_oos_bm_nav = _period_nav(price, pd.concat(bm_parts), 0.0, oos_start, oos_end)
+    combined_oos_sharpe = sharpe_from_nav(combined_oos_nav)
+    for f in fold_results:
+        segment = combined_oos_nav[f['test_start']:f['test_end']] if combined_oos_nav is not None else None
+        f['oos_sharpe'] = sharpe_from_nav(segment)
 
     # Calculate parameter stability
     param_stability = _calc_param_stability(fold_results) if fold_results else {}
@@ -658,35 +641,6 @@ def walk_forward_optimize(
     }
 
 
-def _calc_sharpe_from_nav(nav: pd.Series | None) -> float:
-    """Calculate Sharpe ratio from NAV series."""
-    if nav is None or len(nav) < 2:
-        return np.nan
-    daily_ret = nav.pct_change().dropna()
-    if len(daily_ret) == 0 or daily_ret.std() == 0:
-        return np.nan
-    return daily_ret.mean() / daily_ret.std() * np.sqrt(252)
-
-
-def _combine_navs(navs: list[pd.Series]) -> pd.Series | None:
-    """Combine multiple NAV series by chaining returns."""
-    if not navs:
-        return None
-
-    combined = navs[0].copy()
-    for nav in navs[1:]:
-        if len(nav) == 0:
-            continue
-        # Chain: scale next NAV to start from last combined value
-        scale = combined.iloc[-1] / nav.iloc[0]
-        scaled_nav = nav * scale
-        # Avoid duplicate indices
-        new_dates = scaled_nav.index[scaled_nav.index > combined.index[-1]]
-        combined = pd.concat([combined, scaled_nav.loc[new_dates]])
-
-    return combined
-
-
 def _calc_param_stability(fold_results: list[dict]) -> dict:
     """Calculate parameter stability across folds."""
     if len(fold_results) < 2:
@@ -707,27 +661,12 @@ def _calc_param_stability(fold_results: list[dict]) -> dict:
     return stability
 
 
-def _benchmark_nav(
-    price: pd.DataFrame,
-    signal: pd.DataFrame,
-    tcost: float = 0.0,
-    start_date: str | None = None,
-    end_date: str | None = None,
-    core_config: dict | None = None,
-) -> pd.Series | None:
-    """Dashboard benchmark NAV for a period: equal weight across tickers with a signal (+ core blend)."""
-    wgt = _with_core(equal_weight_benchmark(signal), price, core_config)
-    return _period_nav(price, to_rebalance_dates(wgt), tcost, start_date, end_date)
-
-
 def _single_ticker_nav(
     price_series: pd.Series,
     start_date: str | None = None,
     end_date: str | None = None,
 ) -> pd.Series | None:
-    """
-    Compute NAV for a single ticker (buy and hold) for a specific period.
-    """
+    """Benchmark price series (custom BM) rebased to 1000 over a period."""
     if start_date is None:
         start_date = price_series.index[0]
     else:

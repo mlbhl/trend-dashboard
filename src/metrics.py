@@ -3,6 +3,8 @@
 import numpy as np
 import pandas as pd
 
+from .config import PERIODS_PER_YEAR
+
 
 def summary_stats(navs: pd.DataFrame | pd.Series) -> pd.DataFrame:
     """
@@ -25,13 +27,13 @@ def summary_stats(navs: pd.DataFrame | pd.Series) -> pd.DataFrame:
 
     # Time period
     n_samples = len(returns)
-    n_years = n_samples / 252  # Trading days per year
+    n_years = n_samples / PERIODS_PER_YEAR
 
     # Basic return statistics
     total_return = navs.iloc[-1] / navs.iloc[0] - 1
     cagr = (navs.iloc[-1] / navs.iloc[0]) ** (1 / n_years) - 1
-    mean_return = returns.mean() * 252
-    vol = returns.std() * np.sqrt(252)
+    mean_return = returns.mean() * PERIODS_PER_YEAR
+    vol = returns.std() * np.sqrt(PERIODS_PER_YEAR)
 
     # Risk-adjusted
     sharpe = mean_return / vol
@@ -62,6 +64,16 @@ def summary_stats(navs: pd.DataFrame | pd.Series) -> pd.DataFrame:
     }).T
 
     return stats
+
+
+def sharpe_from_nav(nav: pd.Series | None) -> float:
+    """Annualised Sharpe ratio (zero risk-free rate) of a NAV series; NaN when undefined."""
+    if nav is None or len(nav) < 2:
+        return np.nan
+    daily_ret = nav.pct_change().dropna()
+    if len(daily_ret) == 0 or daily_ret.std() == 0:
+        return np.nan
+    return daily_ret.mean() / daily_ret.std() * np.sqrt(PERIODS_PER_YEAR)
 
 
 def format_stats(stats: pd.DataFrame) -> pd.DataFrame:
@@ -153,20 +165,22 @@ def calculate_kpis(navs: pd.DataFrame, benchmark_col: str = 'BM') -> dict:
 
 
 def _calculate_ytd_return(nav: pd.Series) -> float:
-    """Calculate year-to-date return."""
-    current_year = nav.index[-1].year
-    ytd_start = nav[nav.index.year == current_year].iloc[0]
-    return nav.iloc[-1] / ytd_start - 1
+    """Year-to-date return from the previous year-end close (the first value if the series starts
+    this year) — the same base as the YTD bar in annual_returns()."""
+    last = nav.index[-1]
+    before = nav[nav.index.year < last.year]
+    base = before.iloc[-1] if len(before) else nav[nav.index.year == last.year].iloc[0]
+    return nav.iloc[-1] / base - 1
 
 
 def _calculate_mtd_return(nav: pd.Series) -> float:
-    """Calculate month-to-date return."""
-    current_month = nav.index[-1].month
-    current_year = nav.index[-1].year
-    mtd_data = nav[(nav.index.year == current_year) & (nav.index.month == current_month)]
-    if len(mtd_data) > 0:
-        return nav.iloc[-1] / mtd_data.iloc[0] - 1
-    return 0.0
+    """Month-to-date return from the previous month-end close (the first value if the series starts
+    this month) — the same base as monthly_returns()."""
+    last = nav.index[-1]
+    month_start = pd.Timestamp(last.year, last.month, 1)
+    before = nav[nav.index < month_start]
+    base = before.iloc[-1] if len(before) else nav[nav.index >= month_start].iloc[0]
+    return nav.iloc[-1] / base - 1
 
 
 def annual_returns(navs: pd.DataFrame) -> pd.DataFrame:
