@@ -30,9 +30,14 @@ Price Data (Yahoo Finance) → Signal Generation → Portfolio Weights → Backt
 - `charts.py` - Plotly visualizations: NAV, drawdown, allocation, heatmap, signal tables
 - `optimizer.py` - `optimize_sharpe()` grid search for optimal lookback windows and weights
 
-**Dash Components (`dash_components/`):**
-- `layout.py` - UI layout with sidebar controls and main content tabs
-- `callbacks.py` - All Dash callbacks; Run Analysis only wraps `src.analysis.run_analysis()` into alerts/stores
+**Dash Components (`dash_components/`):** split by screen area; `*_layout.py` = what is shown, `*_callbacks.py` = behaviour
+- `layout.py` - `create_layout()`: stores, downloads, sidebar + results area
+- `sidebar_layout.py` - sidebar, one function per section (`_signal_section()`, `_benchmark_section()`, ...); also help labels and the core/BM row builders (reused by `sidebar_callbacks.py`)
+- `results_layout.py` - results area, one function per section (`_holdings_section()`, ...) + user-guide texts
+- `callbacks.py` - `register_callbacks()` wires the three modules below
+- `sidebar_callbacks.py` - collapse toggles, ticker selection, core/BM rows
+- `results_callbacks.py` - Run Analysis (wraps `src.analysis.run_analysis()`), charts, heatmaps, Excel downloads
+- `optimization_callbacks.py` - Optimize and walk-forward
 
 **Entry Point:**
 - `app.py` - Dash app, uses gunicorn for production
@@ -57,7 +62,7 @@ Price Data (Yahoo Finance) → Signal Generation → Portfolio Weights → Backt
 
 **Backtest rules live only in `portfolio.py`** (`compute_weight_top_k()`, `backtest()`). `optimizer.py` calls them via `_strategy_nav()` / `_benchmark_nav()` — never re-implement the weight or NAV loop there.
 
-**Adding Dash callbacks:** Add to `dash_components/callbacks.py` within `register_callbacks()` function
+**Adding Dash callbacks:** Add inside `register(app)` of the matching `dash_components/*_callbacks.py`; new UI goes into the matching section function in `sidebar_layout.py` / `results_layout.py`. Keep `.py` file names unique across the project (no second `analysis.py` etc.)
 
 ## Code Style
 
